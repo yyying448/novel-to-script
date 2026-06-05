@@ -171,6 +171,16 @@ async def convert(req: ConvertRequest):
                 "chapter_map": ch_map
             }, event_loop)
 
+            # ===== 改编策略报告 =====
+            from adaptation_agent import generate_adaptation_strategy
+            strategy_report = generate_adaptation_strategy(
+                req.text, summary, client
+            )
+            _put_sync(queue, {
+                "type": "strategy",
+                "report": strategy_report
+            }, event_loop)
+
             # 执行转换
             from converter import convert_novel_to_script
 
@@ -201,7 +211,15 @@ async def convert(req: ConvertRequest):
                 partial_callback=on_partial
             )
 
-            # 推送最终结果（含章节映射和角色档案）
+            # ===== 场景分析（时长/难度/不可拍内容/戏剧功能）=====
+            from adaptation_agent import analyze_all_scenes, estimate_total_runtime
+            result["scenes"] = analyze_all_scenes(result.get("scenes", []))
+            runtime = estimate_total_runtime(result["scenes"])
+            result["runtime"] = {
+                "min": runtime[0], "likely": runtime[1], "max": runtime[2]
+            }
+
+            # 推送最终结果（含所有分析数据）
             scene_count = len(result.get("scenes", []))
             char_count = result.get("character_count", 0)
             _put_sync(queue, {
@@ -210,7 +228,9 @@ async def convert(req: ConvertRequest):
                 "scene_count": scene_count,
                 "chapter_count": len(chapters),
                 "chapter_map": ch_map,
-                "character_count": char_count
+                "character_count": char_count,
+                "strategy_report": strategy_report,
+                "runtime": result.get("runtime", {})
             }, event_loop)
 
         except Exception as e:
