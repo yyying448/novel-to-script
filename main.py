@@ -33,6 +33,7 @@ class ConvertRequest(BaseModel):
     provider: str = "deepseek"
     base_url: Optional[str] = None
     model: Optional[str] = None
+    episode_minutes: float = 0  # 0=不分集，>0=目标单集时长（分钟）
 
 
 class ReviseRequest(BaseModel):
@@ -232,12 +233,25 @@ async def convert(req: ConvertRequest):
             )
 
             # ===== 场景分析（时长/难度/不可拍内容/戏剧功能）=====
-            from adaptation_agent import analyze_all_scenes, estimate_total_runtime
+            from adaptation_agent import analyze_all_scenes, estimate_total_runtime, split_into_episodes
             result["scenes"] = analyze_all_scenes(result.get("scenes", []))
             runtime = estimate_total_runtime(result["scenes"])
             result["runtime"] = {
                 "min": runtime[0], "likely": runtime[1], "max": runtime[2]
             }
+
+            # ===== 分集拆分 =====
+            if req.episode_minutes > 0:
+                episodes = split_into_episodes(
+                    result["scenes"],
+                    target_minutes=req.episode_minutes,
+                    chapter_map=ch_map,
+                )
+                result["episodes"] = episodes
+                result["episode_count"] = len(episodes)
+            else:
+                result["episodes"] = []
+                result["episode_count"] = 0
 
             # 推送最终结果（含所有分析数据）
             scene_count = len(result.get("scenes", []))
@@ -250,7 +264,8 @@ async def convert(req: ConvertRequest):
                 "chapter_map": ch_map,
                 "character_count": char_count,
                 "strategy_report": strategy_report,
-                "runtime": result.get("runtime", {})
+                "runtime": result.get("runtime", {}),
+                "episode_count": result.get("episode_count", 0)
             }, event_loop)
 
         except Exception as e:
