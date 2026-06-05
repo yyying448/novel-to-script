@@ -233,8 +233,8 @@ async function saveApiKey() {
 // 第2步：输入小说
 // ============================================================
 function switchInputTab(tab) {
-    document.querySelectorAll('#step-input .tab').forEach(t => t.classList.remove('active'));
-    event.target.classList.add('active');
+    const tabs = document.querySelectorAll('#step-input .tab');
+    tabs.forEach((t, i) => t.classList.toggle('active', (i === 0 && tab === 'upload') || (i === 1 && tab === 'paste')));
     document.getElementById('tab-upload').classList.toggle('hidden', tab !== 'upload');
     document.getElementById('tab-paste').classList.toggle('hidden', tab !== 'paste');
 }
@@ -487,12 +487,13 @@ function renderVisual(result) {
                 <h3>🎬 场景 ${s.scene_id} · ${esc(s.location || '未知地点')}</h3>
                 <p class="loc">${esc(s.summary || '')}</p>`;
             if (s.characters_present && s.characters_present.length) {
-                html += `<p style="font-size:0.8rem;color:var(--muted);">出场：${s.characters_present.map(c => esc(c.name)).join('、')}</p>`;
+                html += `<p style="font-size:0.8rem;color:var(--muted);">出场：${s.characters_present.filter(c => c && c.name).map(c => esc(c.name)).join('、')}</p>`;
             }
             (s.dialogues || []).forEach(d => {
+                if (!d || !d.speaker) return;
                 html += `<div class="dialogue-block">
                     <p class="speaker">${esc(d.speaker)}</p>`;
-                (d.lines || []).forEach(l => { html += `<p class="line">${esc(l)}</p>`; });
+                (d.lines || []).forEach(l => { if (l) html += `<p class="line">${esc(l)}</p>`; });
                 if (d.tone) html += `<p class="meta">🗣 ${esc(d.tone)}</p>`;
                 if (d.action) html += `<p class="meta">🎭 ${esc(d.action)}</p>`;
                 html += `</div>`;
@@ -506,9 +507,10 @@ function renderVisual(result) {
 }
 
 function switchView(view) {
-    document.querySelectorAll('#view-tabs .tab').forEach(t => t.classList.remove('active'));
-    event.target.classList.add('active');
-    ['yaml','visual','revise'].forEach(v => {
+    const tabs = document.querySelectorAll('#view-tabs .tab');
+    const views = ['yaml', 'visual', 'revise'];
+    tabs.forEach((t, i) => t.classList.toggle('active', views[i] === view));
+    views.forEach(v => {
         document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
     });
 }
