@@ -371,16 +371,24 @@ def _run_comparison(req: ConvertRequest, main_result: dict, queue: asyncio.Queue
         except Exception as e:
             all_results.append({"label": label, "scenes": [], "error": str(e)})
 
-    # 裁判评分（用主模型当裁判）
+    # 裁判评分
     if len(all_results) >= 2:
         scores = _judge_results(all_results, req)
+        # 每个结果只传前 3 个场景预览，完整数据存 state
+        results_preview = []
+        for r in all_results:
+            preview = r.get("scenes", [])[:3]
+            results_preview.append({
+                "label": r["label"],
+                "scene_count": len(r.get("scenes", [])),
+                "score": scores.get(r["label"], "N/A"),
+                "error": r.get("error", ""),
+                "preview": preview,
+                "all_scenes": r.get("scenes", [])  # 完整数据
+            })
         _put_sync(queue, {
             "type": "compare",
-            "results": [
-                {"label": r["label"], "scene_count": len(r.get("scenes", [])),
-                 "score": scores.get(r["label"], "N/A"), "error": r.get("error", "")}
-                for r in all_results
-            ]
+            "results": results_preview
         }, loop)
 
 
