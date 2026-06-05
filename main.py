@@ -33,7 +33,11 @@ class ConvertRequest(BaseModel):
     provider: str = "deepseek"
     base_url: Optional[str] = None
     model: Optional[str] = None
-    episode_minutes: float = 0  # 0=不分集，>0=目标单集时长（分钟）
+    episode_minutes: float = 0
+    # 对比模式：最多 2 个额外模型
+    compare_keys: str = ""       # JSON 数组：["key2","key3"]
+    compare_models: str = ""     # JSON 数组：["model2","model3"]
+    compare_providers: str = ""  # JSON 数组：["provider2","provider3"]
 
 
 class ReviseRequest(BaseModel):
@@ -232,9 +236,10 @@ async def convert(req: ConvertRequest):
                 model=model,
             )
 
-            # ===== 场景分析（时长/难度/不可拍内容/戏剧功能）=====
-            from adaptation_agent import analyze_all_scenes, estimate_total_runtime, split_into_episodes
+            # ===== 场景分析（时长/难度/不可拍/戏剧功能/矛盾点）=====
+            from adaptation_agent import analyze_all_scenes, estimate_total_runtime, split_into_episodes, annotate_conflicts
             result["scenes"] = analyze_all_scenes(result.get("scenes", []))
+            result["scenes"] = annotate_conflicts(result["scenes"])
             runtime = estimate_total_runtime(result["scenes"])
             result["runtime"] = {
                 "min": runtime[0], "likely": runtime[1], "max": runtime[2]
@@ -267,6 +272,10 @@ async def convert(req: ConvertRequest):
                 "runtime": result.get("runtime", {}),
                 "episode_count": result.get("episode_count", 0)
             }, event_loop)
+
+            # ===== 多模型对比 =====
+            if req.compare_keys:
+                _run_comparison(req, result, queue, event_loop)
 
         except Exception as e:
             _put_sync(queue, {
@@ -329,8 +338,87 @@ async def revise(req: ReviseRequest):
 
 
 # ============================================================
-# 工具函数
+# 多模型对比
 # ============================================================
+
+def _run_comparison(req: ConvertRequest, main_result: dict, queue: asyncio.Queue, loop):
+    """运行对比模型并评分"""
+    import json as _json
+    from llm_client import create_client, call_llm, get_default_model
+    from converter import convert_novel_to_script
+
+    try:
+        keys = _json.loads(req.compare_keys) if req.compare_keys else []
+        models = _json.loads(req.compare_models) if req.compare_models else []
+        providers = _json.loads(req.compare_providers) if req.compare_providers else []
+    except Exception:
+        return
+
+    if not keys:
+        return
+
+    all_results = [{"label": "模型 A", "scenes": main_result.get("scenes", [])}]
+    names = ["模型 B", "模型 C"]
+
+    for i, key in enumerate(keys[:2]):
+        label = names[i] if i < len(names) else f"模型 {i+2}"
+        try:
+            provider = providers[i] if i < len(providers) else req.provider
+            model = models[i] if i < len(models) else get_default_model(provider)
+            client = create_client(key, provider=provider)
+            result = convert_novel_to_script(req.text, client, model=model)
+            all_results.append({"label": label, "scenes": result.get("scenes", [])})
+        except Exception as e:
+            all_results.append({"label": label, "scenes": [], "error": str(e)})
+
+    # 裁判评分（用主模型当裁判）
+    if len(all_results) >= 2:
+        scores = _judge_results(all_results, req)
+        _put_sync(queue, {
+            "type": "compare",
+            "results": [
+                {"label": r["label"], "scene_count": len(r.get("scenes", [])),
+                 "score": scores.get(r["label"], "N/A"), "error": r.get("error", "")}
+                for r in all_results
+            ]
+        }, loop)
+
+
+def _judge_results(results: list, req: ConvertRequest) -> dict:
+    """让 LLM 裁判对多个剧本打分"""
+    from llm_client import create_client, call_llm
+
+    msg = "请从以下维度为 3 个剧本打分（每项 1-10 分）：\n"
+    msg += "1) 对话自然度 2) 场景完整性 3) 叙事流畅度 4) 角色一致性\n\n"
+
+    for r in results:
+        scenes = r.get("scenes", [])[:5]
+        preview = "\n".join([
+            f"  场景{s.get('scene_id','?')}: {s.get('summary','?')} [{s.get('location','?')}]"
+            for s in scenes
+        ])
+        msg += f"=== {r['label']}（{len(r.get('scenes',[]))} 场）===\n{preview}\n\n"
+
+    msg += "请输出 JSON，格式：{\"模型 A\": {\"总分\": 35, \"评语\": \"...\"}, ...}"
+
+    try:
+        client = create_client(req.api_key, provider=req.provider, base_url=req.base_url)
+        response = call_llm(client, "你是专业剧本评审。只输出 JSON，不要解释。", msg,
+                           model=req.model or "deepseek-chat", max_tokens=1024)
+        # 提取 JSON
+        import json as _json
+        start = response.find("{")
+        end = response.rfind("}") + 1
+        if start >= 0 and end > start:
+            return _json.loads(response[start:end])
+    except Exception:
+        pass
+    return {}
+
+
+# ================================================================
+# 工具函数
+# ================================================================
 
 def _put_sync(queue: asyncio.Queue, data: dict, loop: asyncio.AbstractEventLoop):
     """

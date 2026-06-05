@@ -17,16 +17,20 @@ class CharacterProfile:
 
     def __init__(self, name: str, role: str = "未知"):
         self.name = name
-        self.role = role  # 主角/重要配角/配角/龙套
-        self.chapters: List[str] = []  # 出场章节列表
-        self.scene_count = 0  # 出场场景次数
-        self.dialogue_count = 0  # 台词句数
-        self.personality = ""  # 性格描述（LLM 分析）
-        self.speech_style = ""  # 说话风格（LLM 分析）
-        self.identity = ""  # 身份背景
-        self.relationships: Dict[str, str] = {}  # {角色名: 关系描述}
-        self.emotional_arc: List[str] = []  # 情绪变化轨迹
-        self.key_actions: List[str] = []  # 关键行为
+        self.role = role
+        self.gender = ""          # 性别（男/女/未知）
+        self.age_range = ""       # 年龄段（少年/青年/中年/老年）
+        self.chapters: List[str] = []
+        self.scene_count = 0
+        self.dialogue_count = 0
+        self.personality = ""     # 性格描述
+        self.speech_style = ""    # 说话风格
+        self.identity = ""        # 身份背景
+        self.motivation = ""      # 核心动机/目标
+        self.appearance = ""      # 外貌特征
+        self.relationships: Dict[str, str] = {}
+        self.emotional_arc: List[str] = []
+        self.key_actions: List[str] = []
 
     def to_inject_prompt(self) -> str:
         """生成注入到章节转换 prompt 中的简洁角色档案"""
@@ -179,12 +183,16 @@ class CharacterManager:
             result.append({
                 "name": name,
                 "role": c.role,
+                "gender": c.gender,
+                "age_range": c.age_range,
                 "chapters_count": len(c.chapters),
                 "scene_count": c.scene_count,
                 "dialogue_count": c.dialogue_count,
                 "personality": c.personality,
                 "speech_style": c.speech_style,
                 "identity": c.identity,
+                "motivation": c.motivation,
+                "appearance": c.appearance,
                 "relationships": dict(c.relationships),
                 "first_chapter": c.chapters[0] if c.chapters else "未知",
                 "chapters": c.chapters,

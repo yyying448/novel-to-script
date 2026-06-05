@@ -343,6 +343,87 @@ def _make_episode(ep_id: int, scenes: List[Dict], chapters: set) -> Dict:
 
 
 # ================================================================
+# 矛盾点检测
+# ================================================================
+
+CONFLICT_PATTERNS = {
+    "人人冲突": [
+        r"(争吵|争执|吵架|对峙|对立|冲突|对抗|反驳|怒斥|呵斥|质问|指责|骂|恨|仇|敌)",
+        r"(打架|搏斗|出手|动手|打倒|击败|刺杀|决斗|开战)",
+    ],
+    "人己冲突": [
+        r"(犹豫|纠结|挣扎|矛盾|彷徨|迷茫|质问自己|内心的声音|天人交战)",
+        r"(不知该如何|左右为难|进退两难|难以抉择|动摇)",
+    ],
+    "人境冲突": [
+        r"(天灾|地震|洪水|暴雨|暴雪|绝境|悬崖|陷阱|围困|封死|无路可退)",
+        r"(规则|制度|命令|禁令|不许|不可|禁止|违背|触犯|规矩)",
+    ],
+    "权力博弈": [
+        r"(威胁|胁迫|逼|强迫|施压|谈判|交易|交换条件|筹码|底牌)",
+        r"(阴谋|算计|策划|密谋|暗算|布局|设局)",
+    ],
+    "情感纠葛": [
+        r"(爱慕|暗恋|吃醋|嫉妒|背叛|欺骗|隐瞒|分手|绝交|心碎|流泪|痛哭)",
+        r"(三角|误会|误解|猜疑|不信|考验)",
+    ],
+    "生死危机": [
+        r"(生死|危在旦夕|命悬一线|致命|杀戮|屠杀|围杀|追杀|逃生|逃脱|逃命)",
+        r"(重伤|垂死|濒死|倒下|流血|生命|救|抢救)",
+    ],
+}
+
+
+def detect_conflict(scene: Dict) -> Dict:
+    """
+    检测场景中的矛盾点并标注类型和强度
+
+    Returns:
+        {"types": [...], "intensity": 1-5, "description": "..."}
+    """
+    text = scene.get("summary", "") + " " + scene.get("scene_notes", "")
+    for d in scene.get("dialogues", []):
+        if d:
+            text += " " + (d.get("action") or "")
+            text += " " + (d.get("tone") or "")
+            for line in (d.get("lines") or []):
+                if line:
+                    text += " " + line
+
+    types = []
+    for conflict_type, patterns in CONFLICT_PATTERNS.items():
+        if _match_any(text, patterns):
+            types.append(conflict_type)
+
+    # 强度判断
+    intensity = 0
+    if types:
+        intensity = 1
+        high_tone = any(w in text for w in ["怒斥", "嘶吼", "痛哭", "致命", "绝境", "杀戮", "背叛", "决斗"])
+        medium_tone = any(w in text for w in ["争执", "质问", "威胁", "挣扎", "误会", "犹豫"])
+        if high_tone:
+            intensity = 4 if len(types) >= 2 else 3
+        elif medium_tone:
+            intensity = 2
+        if any(w in text for w in ["生死", "致命", "杀戮", "绝境"]):
+            intensity = 5
+
+    description = "、".join(types) if types else ""
+
+    return {"types": types, "intensity": intensity, "description": description}
+
+
+def annotate_conflicts(scenes: List[Dict]) -> List[Dict]:
+    """为所有场景标注矛盾点"""
+    for scene in scenes:
+        conflict = detect_conflict(scene)
+        scene["conflict_types"] = conflict["types"]
+        scene["conflict_intensity"] = conflict["intensity"]
+        scene["conflict_description"] = conflict["description"]
+    return scenes
+
+
+# ================================================================
 # 工具函数
 # ================================================================
 
