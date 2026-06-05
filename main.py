@@ -30,6 +30,9 @@ templates = Jinja2Templates(directory="templates")
 class ConvertRequest(BaseModel):
     text: str
     api_key: str
+    provider: str = "deepseek"
+    base_url: Optional[str] = None
+    model: Optional[str] = None
 
 
 class ReviseRequest(BaseModel):
@@ -37,6 +40,9 @@ class ReviseRequest(BaseModel):
     existing_yaml: str
     feedback: str
     api_key: str
+    provider: str = "deepseek"
+    base_url: Optional[str] = None
+    model: Optional[str] = None
 
 
 # ============================================================
@@ -47,6 +53,16 @@ class ReviseRequest(BaseModel):
 async def home(request: Request):
     """首页"""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+# ============================================================
+# API：获取可用 LLM 厂商列表
+# ============================================================
+@app.get("/api/providers")
+async def get_providers():
+    """返回所有支持的 LLM 厂商及默认配置"""
+    from llm_client import get_provider_list
+    return JSONResponse({"success": True, "providers": get_provider_list()})
 
 
 # ============================================================
@@ -61,7 +77,9 @@ async def validate_key(req: ConvertRequest):
     try:
         from llm_client import test_api_key
 
-        valid, message = test_api_key(req.api_key)
+        valid, message = test_api_key(
+            req.api_key, provider=req.provider, base_url=req.base_url
+        )
         return JSONResponse({
             "success": valid,
             "message": message
@@ -149,9 +167,10 @@ async def convert(req: ConvertRequest):
     def run_conversion():
         """在独立线程中运行转换（避免阻塞事件循环）"""
         try:
-            # 创建 LLM 客户端
-            from llm_client import create_client
-            client = create_client(req.api_key)
+            # 创建 LLM 客户端（多厂商适配）
+            from llm_client import create_client, get_default_model
+            client = create_client(req.api_key, provider=req.provider, base_url=req.base_url)
+            model = req.model or get_default_model(req.provider)
 
             # 切分章节
             from chapter_splitter import split_chapters, get_chapter_summary
@@ -174,7 +193,7 @@ async def convert(req: ConvertRequest):
             # ===== 改编策略报告 =====
             from adaptation_agent import generate_adaptation_strategy
             strategy_report = generate_adaptation_strategy(
-                req.text, summary, client
+                req.text, summary, client, model=model
             )
             _put_sync(queue, {
                 "type": "strategy",
@@ -208,7 +227,8 @@ async def convert(req: ConvertRequest):
             result = convert_novel_to_script(
                 req.text, client,
                 progress_callback=on_progress,
-                partial_callback=on_partial
+                partial_callback=on_partial,
+                model=model,
             )
 
             # ===== 场景分析（时长/难度/不可拍内容/戏剧功能）=====
@@ -269,15 +289,17 @@ async def revise(req: ReviseRequest):
     根据用户意见二次生成剧本
     """
     try:
-        from llm_client import create_client
+        from llm_client import create_client, get_default_model
         from converter import revise_script
 
-        client = create_client(req.api_key)
+        client = create_client(req.api_key, provider=req.provider, base_url=req.base_url)
+        model = req.model or get_default_model(req.provider)
         result = revise_script(
             chapter_text=req.chapter_text,
             existing_yaml=req.existing_yaml,
             feedback=req.feedback,
-            llm_client=client
+            llm_client=client,
+            model=model,
         )
 
         scene_count = len(result.get("scenes", []))
