@@ -58,10 +58,9 @@ class CharacterManager:
     def register_from_scenes(self, scenes: List[Dict], chapter_title: str):
         """
         从刚转换完成的场景中提取角色信息，增量更新档案
-
-        每个场景的 characters_present 已含 name 和 role，
-        这里统计出场次数、台词数、记录出场章节。
         """
+        if not scenes:
+            return
         for scene in scenes:
             characters_in_scene = scene.get("characters_present", [])
             if not characters_in_scene:
