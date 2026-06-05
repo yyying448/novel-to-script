@@ -158,11 +158,17 @@ async def convert(req: ConvertRequest):
             chapters = split_chapters(req.text)
             summary = get_chapter_summary(chapters)
 
-            # 推送章节识别结果
+            # 构建章节标题→原文映射（供前端修改时精准定位章节）
+            ch_map = {}
+            for ch in chapters:
+                ch_map[ch["title"]] = ch["content"][:8000]
+
+            # 推送章节识别结果（携带章节原文映射）
             _put_sync(queue, {
                 "type": "chapters",
                 "data": summary,
-                "count": len(chapters)
+                "count": len(chapters),
+                "chapter_map": ch_map
             }, event_loop)
 
             # 执行转换
@@ -179,15 +185,29 @@ async def convert(req: ConvertRequest):
                     "percent": round(current / total * 100) if total > 0 else 0
                 }, event_loop)
 
-            result = convert_novel_to_script(req.text, client, progress_callback=on_progress)
+            def on_partial(scenes: list, completed: int, total: int):
+                """每完成 N 章推送一次中间结果（实时剧本）"""
+                _put_sync(queue, {
+                    "type": "partial",
+                    "scenes": scenes,
+                    "completed": completed,
+                    "total": total
+                }, event_loop)
 
-            # 推送最终结果
+            result = convert_novel_to_script(
+                req.text, client,
+                progress_callback=on_progress,
+                partial_callback=on_partial
+            )
+
+            # 推送最终结果（含章节映射）
             scene_count = len(result.get("scenes", []))
             _put_sync(queue, {
                 "type": "done",
                 "result": result,
                 "scene_count": scene_count,
-                "chapter_count": len(chapters)
+                "chapter_count": len(chapters),
+                "chapter_map": ch_map
             }, event_loop)
 
         except Exception as e:

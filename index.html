@@ -180,6 +180,7 @@ let state = {
     apiKey: localStorage.getItem('ds_api_key') || '',
     novelText: '',
     chapters: [],
+    chapterMap: {},      // 章节标题 → 原文（供修改时用）
     scriptResult: null,
 };
 
@@ -357,6 +358,7 @@ function handleSSE(event) {
     switch (event.type) {
         case 'chapters':
             state.chapters = event.data;
+            if (event.chapter_map) state.chapterMap = event.chapter_map;
             document.getElementById('progress-text').textContent =
                 `章节识别完成，共 ${event.count} 章，开始逐章转换...`;
             break;
@@ -377,8 +379,17 @@ function handleSSE(event) {
             document.getElementById('progress-text').textContent = '✅ 转换完成！';
             document.getElementById('btn-convert').disabled = false;
             state.scriptResult = event.result;
+            if (event.chapter_map) state.chapterMap = event.chapter_map;
             showResult(event.result, event.scene_count);
             document.getElementById('step-result').classList.remove('hidden');
+            break;
+        case 'partial':
+            // 中间结果：实时展示已完成章节的剧本
+            state.scriptResult = { scenes: event.scenes };
+            showResult(state.scriptResult, event.scenes.length);
+            document.getElementById('step-result').classList.remove('hidden');
+            document.getElementById('progress-text').textContent =
+                `📝 已完成 ${event.completed}/${event.total} 章，剧本实时预览中...`;
             break;
         case 'error':
             document.getElementById('progress-text').textContent = '❌ ' + event.message;
@@ -393,7 +404,11 @@ function updateReviseChapterSelect(title) {
     if (!_chapterTitles.includes(title)) {
         _chapterTitles.push(title);
         const sel = document.getElementById('revise-chapter');
-        sel.innerHTML = _chapterTitles.map(t => `<option value="${t}">${t}</option>`).join('');
+        const maxLen = 15;
+        sel.innerHTML = _chapterTitles.map(t => {
+            const display = t.length > maxLen ? t.substring(0, maxLen) + '…' : t;
+            return `<option value="${t}" title="${t}">${display}</option>`;
+        }).join('');
     }
 }
 
@@ -448,26 +463,46 @@ function yamlDump(obj, indent = 0) {
 
 function renderVisual(result) {
     const scenes = result.scenes || [];
-    let html = '';
+    if (!scenes.length) {
+        document.getElementById('visual-output').innerHTML = '<p style="color:var(--muted);">暂无场景数据</p>';
+        return;
+    }
+
+    // 按章节分组
+    const groups = {};
     scenes.forEach(s => {
-        html += `<div class="scene-card">
-            <h3>🎬 场景 ${s.scene_id} · ${esc(s.location || '未知地点')}</h3>
-            <p class="loc">${esc(s.summary || '')}</p>`;
-        if (s.characters_present && s.characters_present.length) {
-            html += `<p style="font-size:0.8rem;color:var(--muted);">出场：${s.characters_present.map(c => esc(c.name)).join('、')}</p>`;
-        }
-        (s.dialogues || []).forEach(d => {
-            html += `<div class="dialogue-block">
-                <p class="speaker">${esc(d.speaker)}</p>`;
-            (d.lines || []).forEach(l => { html += `<p class="line">${esc(l)}</p>`; });
-            if (d.tone) html += `<p class="meta">🗣 ${esc(d.tone)}</p>`;
-            if (d.action) html += `<p class="meta">🎭 ${esc(d.action)}</p>`;
-            html += `</div>`;
-        });
-        if (s.scene_notes) html += `<p style="font-size:0.8rem;color:var(--warn);margin-top:8px;">📝 ${esc(s.scene_notes)}</p>`;
-        html += '</div>';
+        const ch = s.chapter || '未分类';
+        if (!groups[ch]) groups[ch] = [];
+        groups[ch].push(s);
     });
-    document.getElementById('visual-output').innerHTML = html || '<p style="color:var(--muted);">暂无场景数据</p>';
+
+    let html = '';
+    for (const [chTitle, chScenes] of Object.entries(groups)) {
+        html += `<div style="margin-bottom:24px; border:1px solid var(--accent2); border-radius:8px; overflow:hidden;">
+            <div style="background:var(--accent2); padding:10px 16px; font-weight:bold; font-size:1rem;">
+                📖 ${esc(chTitle)} <span style="color:var(--muted);font-weight:normal;font-size:0.8rem;">（${chScenes.length} 场戏）</span>
+            </div>`;
+        chScenes.forEach(s => {
+            html += `<div class="scene-card" style="margin:8px 8px 0 8px;">
+                <h3>🎬 场景 ${s.scene_id} · ${esc(s.location || '未知地点')}</h3>
+                <p class="loc">${esc(s.summary || '')}</p>`;
+            if (s.characters_present && s.characters_present.length) {
+                html += `<p style="font-size:0.8rem;color:var(--muted);">出场：${s.characters_present.map(c => esc(c.name)).join('、')}</p>`;
+            }
+            (s.dialogues || []).forEach(d => {
+                html += `<div class="dialogue-block">
+                    <p class="speaker">${esc(d.speaker)}</p>`;
+                (d.lines || []).forEach(l => { html += `<p class="line">${esc(l)}</p>`; });
+                if (d.tone) html += `<p class="meta">🗣 ${esc(d.tone)}</p>`;
+                if (d.action) html += `<p class="meta">🎭 ${esc(d.action)}</p>`;
+                html += `</div>`;
+            });
+            if (s.scene_notes) html += `<p style="font-size:0.8rem;color:var(--warn);margin-top:8px;">📝 ${esc(s.scene_notes)}</p>`;
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+    document.getElementById('visual-output').innerHTML = html;
 }
 
 function switchView(view) {
@@ -486,16 +521,33 @@ async function reviseScript() {
     if (!feedback) { toast('请输入修改意见', 'error'); return; }
     if (!state.apiKey) { toast('请先配置 API Key', 'error'); return; }
 
+    // 获取选中的章节
+    const sel = document.getElementById('revise-chapter');
+    const targetChapter = sel.value;
+    if (!targetChapter) { toast('请选择要修改的章节', 'error'); return; }
+
+    // 只取选中章节的原文
+    const chapterText = state.chapterMap[targetChapter] || state.novelText;
+
+    // 只取选中章节的场景
+    const chapterScenes = (state.scriptResult.scenes || []).filter(
+        s => s.chapter === targetChapter
+    );
+
+    if (!chapterScenes.length) {
+        toast('未找到该章节的剧本数据，请确认转换已完成', 'error');
+        return;
+    }
+
     document.getElementById('revise-progress').classList.remove('hidden');
 
-    // 找到当前已有 YAML（取第一个场景所属章节的原文——简化处理，用全文）
     try {
         const resp = await fetch('/api/revise', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                chapter_text: state.novelText,
-                existing_yaml: yamlDump(state.scriptResult),
+                chapter_text: chapterText,
+                existing_yaml: yamlDump({ scenes: chapterScenes }),
                 feedback: feedback,
                 api_key: state.apiKey
             })
@@ -504,17 +556,28 @@ async function reviseScript() {
         document.getElementById('revise-progress').classList.add('hidden');
 
         if (data.success) {
-            state.scriptResult = data.result;
-            showResult(data.result, data.scene_count);
-            toast('剧本已更新！', 'success');
+            // 用修改后的场景替换该章旧场景，其余章保留
+            const allScenes = state.scriptResult.scenes || [];
+            const otherScenes = allScenes.filter(s => s.chapter !== targetChapter);
+            const newScenes = (data.result.scenes || []).map(s => {
+                s.chapter = targetChapter;  // 确保章节标记不丢失
+                return s;
+            });
+            const merged = [...otherScenes, ...newScenes]
+                .sort((a, b) => (a.scene_id || 0) - (b.scene_id || 0));
+            // 重新编号
+            merged.forEach((s, i) => { s.scene_id = i + 1; });
+            state.scriptResult = { scenes: merged };
+            showResult(state.scriptResult, merged.length);
+            toast('✅ 剧本已更新！', 'success');
             switchView('visual');
             document.getElementById('revise-feedback').value = '';
         } else {
-            toast(data.error, 'error');
+            toast('修改失败：' + (data.error || '未知错误'), 'error');
         }
     } catch (err) {
         document.getElementById('revise-progress').classList.add('hidden');
-        toast('修改失败: ' + err.message, 'error');
+        toast('修改失败：' + err.message, 'error');
     }
 }
 
