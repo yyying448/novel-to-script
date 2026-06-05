@@ -143,6 +143,8 @@ async def convert(req: ConvertRequest):
     - {"type": "error", "message": "..."}       → 错误
     """
     queue: asyncio.Queue = asyncio.Queue()
+    # 在异步上下文中捕获事件循环引用（工作线程里拿不到，必须在这里拿）
+    event_loop = asyncio.get_running_loop()
 
     def run_conversion():
         """在独立线程中运行转换（避免阻塞事件循环）"""
@@ -161,7 +163,7 @@ async def convert(req: ConvertRequest):
                 "type": "chapters",
                 "data": summary,
                 "count": len(chapters)
-            })
+            }, event_loop)
 
             # 执行转换
             from converter import convert_novel_to_script
@@ -175,7 +177,7 @@ async def convert(req: ConvertRequest):
                     "title": title,
                     "status": status,
                     "percent": round(current / total * 100) if total > 0 else 0
-                })
+                }, event_loop)
 
             result = convert_novel_to_script(req.text, client, progress_callback=on_progress)
 
@@ -186,13 +188,13 @@ async def convert(req: ConvertRequest):
                 "result": result,
                 "scene_count": scene_count,
                 "chapter_count": len(chapters)
-            })
+            }, event_loop)
 
         except Exception as e:
             _put_sync(queue, {
                 "type": "error",
                 "message": str(e)
-            })
+            }, event_loop)
 
     # 启动转换线程
     Thread(target=run_conversion, daemon=True).start()
@@ -250,17 +252,16 @@ async def revise(req: ReviseRequest):
 # 工具函数
 # ============================================================
 
-def _put_sync(queue: asyncio.Queue, data: dict):
+def _put_sync(queue: asyncio.Queue, data: dict, loop: asyncio.AbstractEventLoop):
     """
     线程安全地向 asyncio.Queue 写入数据
     从同步线程中调用此函数来向异步队列推送事件
-    """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        # 没有运行中的事件循环（不应该发生，但做防御）
-        return
 
+    Args:
+        queue: asyncio 队列
+        data: 要推送的数据
+        loop: 主线程的事件循环（必须在异步上下文中预先捕获后传入）
+    """
     loop.call_soon_threadsafe(queue.put_nowait, data)
 
 
