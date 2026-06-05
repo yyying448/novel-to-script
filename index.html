@@ -149,12 +149,14 @@
         </div>
         <div class="tabs" id="view-tabs">
             <button class="tab active" onclick="switchView('yaml')">📄 YAML</button>
+            <button class="tab" onclick="switchView('strategy')">📋 改编策略</button>
             <button class="tab" onclick="switchView('visual')">🎬 可视化</button>
             <button class="tab" onclick="switchView('characters')">👥 角色档案</button>
             <button class="tab" onclick="switchView('revise')">✏️ 修改</button>
         </div>
         <div class="result-area" id="view-yaml"><pre id="yaml-output"></pre></div>
         <div class="result-area hidden" id="view-visual"><div id="visual-output"></div></div>
+        <div class="result-area hidden" id="view-strategy"><div id="strategy-output" style="line-height:1.8;padding:16px;"></div></div>
         <div class="result-area hidden" id="view-characters"><div id="characters-output"></div></div>
         <div class="result-area hidden" id="view-revise">
             <label>修改意见（描述你希望调整的地方）</label>
@@ -182,8 +184,10 @@ let state = {
     apiKey: localStorage.getItem('ds_api_key') || '',
     novelText: '',
     chapters: [],
-    chapterMap: {},      // 章节标题 → 原文（供修改时用）
+    chapterMap: {},
     scriptResult: null,
+    strategyReport: '',
+    runtime: null,
 };
 
 // 初始化
@@ -364,6 +368,14 @@ function handleSSE(event) {
             document.getElementById('progress-text').textContent =
                 `章节识别完成，共 ${event.count} 章，开始逐章转换...`;
             break;
+        case 'strategy':
+            // 改编策略报告
+            state.strategyReport = event.report;
+            renderStrategy(event.report);
+            document.getElementById('step-result').classList.remove('hidden');
+            document.getElementById('progress-text').textContent =
+                '📋 改编策略已生成，开始逐章转换...';
+            break;
         case 'progress':
             if (event.status === 'start') {
                 document.getElementById('progress-text').textContent =
@@ -382,6 +394,11 @@ function handleSSE(event) {
             document.getElementById('btn-convert').disabled = false;
             state.scriptResult = event.result;
             if (event.chapter_map) state.chapterMap = event.chapter_map;
+            if (event.strategy_report) {
+                state.strategyReport = event.strategy_report;
+                renderStrategy(event.strategy_report);
+            }
+            if (event.runtime) state.runtime = event.runtime;
             showResult(event.result, event.scene_count);
             document.getElementById('step-result').classList.remove('hidden');
             break;
@@ -422,8 +439,12 @@ function updateReviseChapterSelect(title) {
 // ============================================================
 function showResult(result, sceneCount) {
     const charCount = result.characters ? result.characters.length : 0;
-    document.getElementById('scene-count').textContent =
-        `共 ${sceneCount} 个场景 · ${charCount} 个角色`;
+    let extra = `共 ${sceneCount} 个场景 · ${charCount} 个角色`;
+    if (result.runtime || state.runtime) {
+        const rt = result.runtime || state.runtime;
+        extra += ` · ⏱ 约 ${rt.likely || rt.min || '?'} 分钟`;
+    }
+    document.getElementById('scene-count').textContent = extra;
     document.getElementById('yaml-output').textContent = yamlDump(result);
     renderVisual(result);
     if (result.characters && result.characters.length) {
@@ -493,9 +514,25 @@ function renderVisual(result) {
                 📖 ${esc(chTitle)} <span style="color:var(--muted);font-weight:normal;font-size:0.8rem;">（${chScenes.length} 场戏）</span>
             </div>`;
         chScenes.forEach(s => {
+            // 时长和难度标签
+            const dur = s.estimated_duration ? `⏱ ${s.estimated_duration}分钟` : '';
+            const tags = s.difficulty_tags || [];
+            const func = s.dramatic_function || '';
+            const tagHtml = tags.length ? tags.map(t => `<span style="display:inline-block;background:var(--accent2);color:var(--text);padding:1px 8px;border-radius:10px;font-size:0.7rem;margin:2px;">${t}</span>`).join('') : '';
+            const warnings = s.unfilmable_warnings || [];
+
             html += `<div class="scene-card" style="margin:8px 8px 0 8px;">
-                <h3>🎬 场景 ${s.scene_id} · ${esc(s.location || '未知地点')}</h3>
+                <h3>🎬 场景 ${s.scene_id} · ${esc(s.location || '未知地点')}
+                    ${dur ? `<span style="font-size:0.75rem;color:var(--muted);font-weight:normal;">${dur}</span>` : ''}
+                    ${func ? `<span style="font-size:0.7rem;color:var(--warn);font-weight:normal;">· ${esc(func)}</span>` : ''}
+                </h3>
+                ${tagHtml ? `<div style="margin:4px 0;">${tagHtml}</div>` : ''}
                 <p class="loc">${esc(s.summary || '')}</p>`;
+            if (warnings.length) {
+                warnings.forEach(w => {
+                    html += `<p style="font-size:0.75rem;color:var(--warn);margin:2px 0;">${esc(w)}</p>`;
+                });
+            }
             if (s.characters_present && s.characters_present.length) {
                 html += `<p style="font-size:0.8rem;color:var(--muted);">出场：${s.characters_present.filter(c => c && c.name).map(c => esc(c.name)).join('、')}</p>`;
             }
@@ -555,6 +592,19 @@ function renderCharacters(chars) {
     document.getElementById('characters-output').innerHTML = html;
 }
 
+function renderStrategy(report) {
+    // 将 Markdown 报告转为 HTML
+    if (!report) return;
+    let html = report
+        .replace(/### (.*)/g, '<h3 style="color:var(--accent);margin-top:16px;">$1</h3>')
+        .replace(/## (.*)/g, '<h2 style="color:#f093fb;margin-top:20px;border-bottom:1px solid var(--border);padding-bottom:4px;">$1</h2>')
+        .replace(/^- (.+)$/gm, '<li style="margin:4px 0 4px 16px;">$1</li>')
+        .replace(/(\d+)\. (.+)/g, '<div style="margin:4px 0 4px 16px;"><b>$1.</b> $2</div>')
+        .replace(/\n\n/g, '<br>')
+        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    document.getElementById('strategy-output').innerHTML = html;
+}
+
 function recomputeCharacters(scenes) {
     // 从所有场景中重新统计角色数据（修改剧本后保持角色档案同步）
     const map = {};
@@ -602,7 +652,7 @@ function recomputeCharacters(scenes) {
 
 function switchView(view) {
     const tabs = document.querySelectorAll('#view-tabs .tab');
-    const views = ['yaml', 'visual', 'characters', 'revise'];
+    const views = ['yaml', 'strategy', 'visual', 'characters', 'revise'];
     tabs.forEach((t, i) => t.classList.toggle('active', views[i] === view));
     views.forEach(v => {
         document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
