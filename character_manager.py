@@ -18,8 +18,6 @@ class CharacterProfile:
     def __init__(self, name: str, role: str = "未知"):
         self.name = name
         self.role = role
-        self.gender = ""          # 性别（男/女/未知）
-        self.age_range = ""       # 年龄段（少年/青年/中年/老年）
         self.chapters: List[str] = []
         self.scene_count = 0
         self.dialogue_count = 0
@@ -183,8 +181,6 @@ class CharacterManager:
             result.append({
                 "name": name,
                 "role": c.role,
-                "gender": c.gender,
-                "age_range": c.age_range,
                 "chapters_count": len(c.chapters),
                 "scene_count": c.scene_count,
                 "dialogue_count": c.dialogue_count,

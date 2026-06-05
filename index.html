@@ -107,21 +107,23 @@
         </p>
         <details style="margin-top:10px;">
             <summary style="cursor:pointer;color:var(--muted);font-size:0.85rem;">🔬 对比模式（可选，用多个模型生成剧本后裁判评分）</summary>
-            <div style="margin-top:8px;display:flex;gap:8px;">
+            <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
                 <input type="text" id="compare-key-b" placeholder="模型 B API Key" style="flex:1; padding:6px 10px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
-                <input type="text" id="compare-model-b" placeholder="模型 B 名（如 gpt-4o）" style="width:160px; padding:6px 10px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
-                <select id="compare-provider-b" style="padding:6px 10px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
+                <input type="text" id="compare-model-b" placeholder="模型名（如 gpt-4o）" style="width:140px; padding:6px 10px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
+                <select id="compare-provider-b" style="padding:6px 8px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
                     <option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option>
                     <option value="zhipu">智谱</option><option value="moonshot">Kimi</option><option value="qwen">千问</option>
                 </select>
+                <button onclick="validateCompareKey('b')" class="btn-sm btn-outline" style="white-space:nowrap;">验证</button>
             </div>
-            <div style="margin-top:6px;display:flex;gap:8px;">
+            <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
                 <input type="text" id="compare-key-c" placeholder="模型 C API Key（可选）" style="flex:1; padding:6px 10px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
-                <input type="text" id="compare-model-c" placeholder="模型 C 名" style="width:160px; padding:6px 10px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
-                <select id="compare-provider-c" style="padding:6px 10px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
+                <input type="text" id="compare-model-c" placeholder="模型名" style="width:140px; padding:6px 10px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
+                <select id="compare-provider-c" style="padding:6px 8px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
                     <option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option>
                     <option value="zhipu">智谱</option><option value="moonshot">Kimi</option><option value="qwen">千问</option>
                 </select>
+                <button onclick="validateCompareKey('c')" class="btn-sm btn-outline" style="white-space:nowrap;">验证</button>
             </div>
         </details>
     </div>
@@ -181,10 +183,10 @@
             <button class="tab active" onclick="switchView('yaml')">📄 YAML</button>
             <button class="tab" onclick="switchView('strategy')">📋 改编策略</button>
             <button class="tab" onclick="switchView('episodes')">📺 分集</button>
-            <button class="tab" onclick="switchView('compare')" id="tab-compare" style="display:none;">🔬 对比</button>
             <button class="tab" onclick="switchView('visual')">🎬 可视化</button>
             <button class="tab" onclick="switchView('characters')">👥 角色档案</button>
             <button class="tab" onclick="switchView('revise')">✏️ 修改</button>
+            <button class="tab" onclick="switchView('compare')" id="tab-compare" style="display:none;">🔬 对比</button>
         </div>
         <div class="result-area" id="view-yaml"><pre id="yaml-output"></pre></div>
         <div class="result-area hidden" id="view-visual"><div id="visual-output"></div></div>
@@ -307,6 +309,22 @@ async function saveApiKey() {
         btn.textContent = origText;
         btn.disabled = false;
     }
+}
+
+async function validateCompareKey(slot) {
+    const key = document.getElementById('compare-key-' + slot)?.value?.trim();
+    const provider = document.getElementById('compare-provider-' + slot)?.value || 'openai';
+    if (!key) { toast('请先输入模型 ' + slot.toUpperCase() + ' 的 API Key', 'error'); return; }
+    try {
+        const resp = await fetch('/api/validate-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: '', api_key: key, provider: provider })
+        });
+        const data = await resp.json();
+        toast(data.success ? '✅ 模型 ' + slot.toUpperCase() + ' ' + data.message : '❌ ' + data.message,
+              data.success ? 'success' : 'error');
+    } catch (e) { toast('验证失败: ' + e.message, 'error'); }
 }
 
 function getApiParams(extra = {}) {
@@ -673,12 +691,16 @@ function renderVisual(result) {
 function renderCompare(results) {
     if (!results || !results.length) return;
     document.getElementById('tab-compare').style.display = '';
+    // Store all scenes for viewing
+    state.compareScenes = {};
+    results.forEach(r => { if (r.all_scenes) state.compareScenes[r.label] = r.all_scenes; });
+
     const maxScore = Math.max(...results.map(r => {
         const s = r.score || {};
-        return (s.总分) || Object.values(s).reduce((a,b) => a+b, 0) || 0;
+        return s.总分 || Object.values(s).reduce((a,b) => a+b, 0) || 0;
     }));
-    let html = '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap:16px;">';
-    results.forEach(r => {
+    let html = '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">';
+    results.forEach((r, i) => {
         const score = r.score || {};
         const total = score.总分 || Object.values(score).reduce((a,b) => a+b, 0) || 0;
         const isBest = total >= maxScore && total > 0;
@@ -686,13 +708,24 @@ function renderCompare(results) {
             <h3>${isBest ? '🏆 ' : ''}${esc(r.label)} ${isBest ? '（最高分）' : ''}</h3>
             <div style="font-size:0.85rem;">
                 <div><b>场景数：</b>${r.scene_count || 0}</div>
-                <div><b>评分：</b>${typeof score === 'object' ? JSON.stringify(score) : score}</div>
+                <div><b>评分：</b>${typeof score === 'object' ? esc(JSON.stringify(score)) : esc(String(score))}</div>
                 ${r.error ? `<div style="color:var(--accent);"><b>错误：</b>${esc(r.error)}</div>` : ''}
+                ${r.preview && r.preview.length ? `<div style="margin-top:8px;"><b>预览：</b><ol style="margin:4px 0;padding-left:16px;font-size:0.8rem;">${r.preview.map(s => `<li>${esc(s.summary||'?')} [${esc(s.location||'?')}]</li>`).join('')}</ol></div>` : ''}
+                ${r.all_scenes && r.all_scenes.length ? `<button class="btn-sm btn-outline" style="margin-top:8px;" onclick="viewCompareScript('${r.label}')">📄 查看完整剧本</button>` : ''}
             </div>
         </div>`;
     });
     html += '</div>';
     document.getElementById('compare-output').innerHTML = html;
+}
+
+function viewCompareScript(label) {
+    const scenes = (state.compareScenes || {})[label];
+    if (!scenes) return;
+    state.scriptResult = { scenes: scenes };
+    showResult(state.scriptResult, scenes.length);
+    switchView('visual');
+    toast('📄 正在查看：' + label + ' 的完整剧本', 'success');
 }
 
 function renderEpisodes(episodes) {
@@ -739,8 +772,6 @@ function renderCharacters(chars) {
         html += `<div class="scene-card">
             <h3>${c.role === '主角' ? '⭐' : c.role === '重要配角' ? '🔶' : '👤'} ${esc(c.name)} <span style="font-size:0.8rem;color:var(--muted);">${esc(c.role)}</span></h3>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.85rem;">
-                <div><b>性别：</b>${esc(c.gender || '未知')}</div>
-                <div><b>年龄段：</b>${esc(c.age_range || '未知')}</div>
                 <div><b>出场章节：</b>${chCount} 章</div>
                 <div><b>出场场景：</b>${c.scene_count || 0} 次</div>
                 <div><b>台词句数：</b>${c.dialogue_count || 0} 句</div>
