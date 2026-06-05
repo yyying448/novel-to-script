@@ -90,14 +90,19 @@
 
     <!-- 第1步：API Key -->
     <div class="card" id="step-api-key">
-        <h2>1️⃣ 配置 API Key</h2>
-        <label>DeepSeek API Key</label>
-        <div style="display:flex; gap:8px;">
-            <input type="password" id="api-key" placeholder="sk-xxxxxxxxxxxxxxxx" style="flex:1">
+        <h2>1️⃣ 配置 LLM</h2>
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+            <select id="provider-select" onchange="onProviderChange()" style="padding:8px 12px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; font-size:0.9rem;">
+                <option value="deepseek">DeepSeek</option>
+            </select>
+            <input type="password" id="api-key" placeholder="API Key" style="flex:1">
             <button onclick="saveApiKey()">保存</button>
         </div>
-        <p style="margin-top:8px; font-size:0.8rem; color:var(--muted);">
-            从 <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--accent)">platform.deepseek.com</a> 获取
+        <div id="custom-url-group" class="hidden" style="margin-bottom:8px;">
+            <input type="text" id="custom-url" placeholder="自定义 API 地址，如 https://api.example.com/v1" style="width:100%">
+        </div>
+        <p id="provider-help" style="font-size:0.8rem; color:var(--muted);">
+            Key 获取地址：platform.deepseek.com
         </p>
     </div>
 
@@ -182,6 +187,9 @@
 // ============================================================
 let state = {
     apiKey: localStorage.getItem('ds_api_key') || '',
+    provider: localStorage.getItem('llm_provider') || 'deepseek',
+    customUrl: localStorage.getItem('llm_custom_url') || '',
+    providers: [],
     novelText: '',
     chapters: [],
     chapterMap: {},
@@ -191,12 +199,40 @@ let state = {
 };
 
 // 初始化
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     if (state.apiKey) {
         document.getElementById('api-key').value = state.apiKey;
     }
+    await loadProviders();
     setupDragDrop();
 });
+
+async function loadProviders() {
+    try {
+        const resp = await fetch('/api/providers');
+        const data = await resp.json();
+        if (data.success && data.providers) {
+            state.providers = data.providers;
+            const sel = document.getElementById('provider-select');
+            sel.innerHTML = data.providers.map(p =>
+                `<option value="${p.key}" ${p.key === state.provider ? 'selected' : ''}>${p.name}</option>`
+            ).join('');
+            onProviderChange(); // 更新帮助文字
+        }
+    } catch (e) { /* 使用默认列表 */ }
+}
+
+function onProviderChange() {
+    const p = document.getElementById('provider-select').value;
+    state.provider = p;
+    localStorage.setItem('llm_provider', p);
+    document.getElementById('custom-url-group').classList.toggle('hidden', p !== 'custom');
+    const info = state.providers.find(x => x.key === p);
+    if (info) {
+        document.getElementById('provider-help').textContent =
+            `Key 获取地址：${info.help}` + (info.model ? ` · 默认模型：${info.model}` : '');
+    }
+}
 
 // ============================================================
 // 第1步：API Key
@@ -205,11 +241,13 @@ async function saveApiKey() {
     const key = document.getElementById('api-key').value.trim();
     if (!key) { toast('请输入 API Key', 'error'); return; }
 
-    // 先本地保存
     state.apiKey = key;
+    state.provider = document.getElementById('provider-select').value;
+    state.customUrl = document.getElementById('custom-url')?.value?.trim() || '';
     localStorage.setItem('ds_api_key', key);
+    localStorage.setItem('llm_provider', state.provider);
+    localStorage.setItem('llm_custom_url', state.customUrl);
 
-    // 显示验证中
     const btn = document.querySelector('#step-api-key button');
     const origText = btn.textContent;
     btn.textContent = '验证中...';
@@ -219,13 +257,17 @@ async function saveApiKey() {
         const resp = await fetch('/api/validate-key', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: '', api_key: key })
+            body: JSON.stringify({
+                text: '', api_key: key,
+                provider: state.provider,
+                base_url: state.customUrl || null
+            })
         });
         const data = await resp.json();
         if (data.success) {
-            toast('✅ API Key 验证成功', 'success');
+            toast(data.message || '连接成功', 'success');
         } else {
-            toast('❌ ' + data.message, 'error');
+            toast(data.message || '验证失败', 'error');
         }
     } catch (err) {
         toast('验证请求失败，请检查服务是否启动', 'error');
@@ -233,6 +275,14 @@ async function saveApiKey() {
         btn.textContent = origText;
         btn.disabled = false;
     }
+}
+
+function getApiParams(extra = {}) {
+    return Object.assign({
+        api_key: state.apiKey,
+        provider: state.provider,
+        base_url: state.customUrl || null
+    }, extra);
 }
 
 // ============================================================
@@ -298,7 +348,7 @@ async function previewChapters() {
         const resp = await fetch('/api/preview-chapters', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: state.novelText, api_key: state.apiKey })
+            body: JSON.stringify(getApiParams({ text: state.novelText }))
         });
         const data = await resp.json();
         if (!data.success) { toast(data.error, 'error'); return; }
@@ -330,7 +380,7 @@ async function startConvert() {
         const resp = await fetch('/api/convert', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: state.novelText, api_key: state.apiKey })
+            body: JSON.stringify(getApiParams({ text: state.novelText }))
         });
 
         const reader = resp.body.getReader();
@@ -691,12 +741,11 @@ async function reviseScript() {
         const resp = await fetch('/api/revise', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+            body: JSON.stringify(getApiParams({
                 chapter_text: chapterText,
                 existing_yaml: yamlDump({ scenes: chapterScenes }),
-                feedback: feedback,
-                api_key: state.apiKey
-            })
+                feedback: feedback
+            }))
         });
         const data = await resp.json();
         document.getElementById('revise-progress').classList.add('hidden');
