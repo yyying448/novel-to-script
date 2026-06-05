@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 小说转剧本工具</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --card: #16213e;
+            --accent: #e94560;
+            --accent2: #0f3460;
+            --text: #eee;
+            --muted: #999;
+            --border: #2a2a4a;
+            --success: #2ecc71;
+            --warn: #f39c12;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header { text-align: center; padding: 40px 0 30px; }
+        header h1 { font-size: 2rem; background: linear-gradient(135deg, var(--accent), #f093fb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        header p { color: var(--muted); margin-top: 8px; }
+
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+        .card h2 { font-size: 1.1rem; margin-bottom: 16px; color: var(--accent); }
+        label { display: block; margin-bottom: 6px; font-size: 0.9rem; color: var(--muted); }
+        input[type="text"], textarea { width: 100%; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border .2s; }
+        input:focus, textarea:focus { border-color: var(--accent); }
+        textarea { resize: vertical; min-height: 120px; font-family: inherit; }
+
+        .upload-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; cursor: pointer; transition: all .2s; }
+        .upload-zone:hover, .upload-zone.dragover { border-color: var(--accent); background: rgba(233,68,96,.05); }
+        .upload-zone p { color: var(--muted); }
+        .upload-zone .icon { font-size: 3rem; margin-bottom: 8px; }
+        .file-info { margin-top: 10px; font-size: 0.85rem; color: var(--success); }
+
+        .row { display: flex; gap: 16px; }
+        .row > * { flex: 1; }
+
+        button, .btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer; transition: all .2s; }
+        button:hover { filter: brightness(1.15); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+        .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+
+        .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin: 12px 0; }
+        .progress-bar .fill { height: 100%; background: linear-gradient(90deg, var(--accent), #f093fb); border-radius: 3px; transition: width .3s; width: 0%; }
+        .progress-text { font-size: 0.85rem; color: var(--muted); }
+
+        .result-area { max-height: 600px; overflow-y: auto; }
+        .result-area pre { background: var(--bg); padding: 20px; border-radius: 8px; font-size: 0.85rem; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+        .result-area .yaml-key { color: #f093fb; }
+        .result-area .yaml-val { color: #2ecc71; }
+
+        .chapter-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 10px 0; }
+        .chapter-tag { background: var(--accent2); padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; }
+        .chapter-tag .title { color: var(--text); }
+        .chapter-tag .meta { color: var(--muted); font-size: 0.75rem; }
+
+        .scene-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+        .scene-card h3 { color: var(--accent); font-size: 0.95rem; margin-bottom: 8px; }
+        .scene-card .loc { color: var(--muted); font-size: 0.8rem; margin-bottom: 8px; }
+        .dialogue-block { margin: 8px 0; padding-left: 16px; border-left: 2px solid var(--accent2); }
+        .dialogue-block .speaker { color: #f093fb; font-weight: 600; }
+        .dialogue-block .line { color: var(--text); margin: 2px 0; }
+        .dialogue-block .meta { color: var(--muted); font-size: 0.75rem; margin-top: 4px; }
+
+        .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+        .tab { padding: 8px 16px; background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+        .tab.active { background: var(--accent2); color: var(--text); border-color: var(--accent2); }
+
+        .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 0.9rem; z-index: 999; animation: slideIn .3s ease; }
+        .toast.success { background: var(--success); color: #000; }
+        .toast.error { background: var(--accent); color: #fff; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        .hidden { display: none !important; }
+
+        footer { text-align: center; padding: 40px; color: var(--muted); font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>📜 AI 小说转剧本工具</h1>
+        <p>上传小说文件 → 智能识别章节 → AI 逐章生成剧本 YAML</p>
+    </header>
+
+    <!-- 第1步：API Key -->
+    <div class="card" id="step-api-key">
+        <h2>1️⃣ 配置 API Key</h2>
+        <label>DeepSeek API Key</label>
+        <div style="display:flex; gap:8px;">
+            <input type="password" id="api-key" placeholder="sk-xxxxxxxxxxxxxxxx" style="flex:1">
+            <button onclick="saveApiKey()">保存</button>
+        </div>
+        <p style="margin-top:8px; font-size:0.8rem; color:var(--muted);">
+            从 <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--accent)">platform.deepseek.com</a> 获取
+        </p>
+    </div>
+
+    <!-- 第2步：上传文件或粘贴文本 -->
+    <div class="card" id="step-input">
+        <h2>2️⃣ 输入小说内容</h2>
+        <div class="tabs">
+            <button class="tab active" onclick="switchInputTab('upload')">📁 上传文件</button>
+            <button class="tab" onclick="switchInputTab('paste')">📋 粘贴文本</button>
+        </div>
+        <div id="tab-upload">
+            <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                <div class="icon">📂</div>
+                <p>点击选择文件或拖拽到此处</p>
+                <p style="font-size:0.8rem;margin-top:4px">支持 .txt / .docx / .pdf</p>
+            </div>
+            <input type="file" id="file-input" accept=".txt,.docx,.pdf" style="display:none" onchange="handleFile(event)">
+            <div class="file-info hidden" id="file-info"></div>
+        </div>
+        <div id="tab-paste" class="hidden">
+            <textarea id="paste-area" placeholder="在此粘贴小说全文..."></textarea>
+        </div>
+    </div>
+
+    <!-- 第3步：预览章节 -->
+    <div class="card hidden" id="step-chapters">
+        <h2>3️⃣ 章节预览</h2>
+        <div id="chapter-preview"></div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+            <button id="btn-convert" onclick="startConvert()">🚀 开始转换</button>
+            <button class="btn-outline" id="btn-reparse" onclick="previewChapters()">🔄 重新切分</button>
+        </div>
+    </div>
+
+    <!-- 第4步：转换进度 -->
+    <div class="card hidden" id="step-progress">
+        <h2>4️⃣ 转换进度</h2>
+        <div class="progress-bar"><div class="fill" id="progress-fill"></div></div>
+        <p class="progress-text" id="progress-text">等待开始...</p>
+    </div>
+
+    <!-- 第5步：结果展示 -->
+    <div class="card hidden" id="step-result">
+        <h2>5️⃣ 剧本结果</h2>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+            <button id="btn-download" onclick="downloadYaml()">⬇ 下载 YAML</button>
+            <button class="btn-outline" onclick="copyYaml()">📋 复制 YAML</button>
+            <span style="margin-left:auto; color:var(--muted);" id="scene-count"></span>
+        </div>
+        <div class="tabs" id="view-tabs">
+            <button class="tab active" onclick="switchView('yaml')">📄 YAML</button>
+            <button class="tab" onclick="switchView('visual')">🎬 可视化</button>
+            <button class="tab" onclick="switchView('revise')">✏️ 修改</button>
+        </div>
+        <div class="result-area" id="view-yaml"><pre id="yaml-output"></pre></div>
+        <div class="result-area hidden" id="view-visual"><div id="visual-output"></div></div>
+        <div class="result-area hidden" id="view-revise">
+            <label>修改意见（描述你希望调整的地方）</label>
+            <textarea id="revise-feedback" placeholder="例如：对话太少，希望增加人物互动；场景1的 tone 应该更愤怒..."></textarea>
+            <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                <label style="margin:0;">目标章节：</label>
+                <select id="revise-chapter" style="padding:6px 10px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px;"></select>
+                <button onclick="reviseScript()" style="margin-left:auto;">🔧 应用修改</button>
+            </div>
+            <div class="hidden" id="revise-progress" style="margin-top:12px;">
+                <div class="progress-bar"><div class="fill" style="width:100%"></div></div>
+                <p class="progress-text">正在重新生成...</p>
+            </div>
+        </div>
+    </div>
+
+    <footer>AI 小说转剧本工具 · Powered by DeepSeek · 仅供学习和创作使用</footer>
+</div>
+
+<script>
+// ============================================================
+// 全局状态
+// ============================================================
+let state = {
+    apiKey: localStorage.getItem('ds_api_key') || '',
+    novelText: '',
+    chapters: [],
+    scriptResult: null,
+};
+
+// 初始化
+document.addEventListener('DOMContentLoaded', () => {
+    if (state.apiKey) {
+        document.getElementById('api-key').value = state.apiKey;
+    }
+    setupDragDrop();
+});
+
+// ============================================================
+// 第1步：API Key
+// ============================================================
+async function saveApiKey() {
+    const key = document.getElementById('api-key').value.trim();
+    if (!key) { toast('请输入 API Key', 'error'); return; }
+
+    // 先本地保存
+    state.apiKey = key;
+    localStorage.setItem('ds_api_key', key);
+
+    // 显示验证中
+    const btn = document.querySelector('#step-api-key button');
+    const origText = btn.textContent;
+    btn.textContent = '验证中...';
+    btn.disabled = true;
+
+    try {
+        const resp = await fetch('/api/validate-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: '', api_key: key })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            toast('✅ API Key 验证成功', 'success');
+        } else {
+            toast('❌ ' + data.message, 'error');
+        }
+    } catch (err) {
+        toast('验证请求失败，请检查服务是否启动', 'error');
+    } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+    }
+}
+
+// ============================================================
+// 第2步：输入小说
+// ============================================================
+function switchInputTab(tab) {
+    document.querySelectorAll('#step-input .tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('tab-upload').classList.toggle('hidden', tab !== 'upload');
+    document.getElementById('tab-paste').classList.toggle('hidden', tab !== 'paste');
+}
+
+function setupDragDrop() {
+    const zone = document.getElementById('drop-zone');
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) parseAndPreview(file);
+    });
+}
+
+async function handleFile(e) {
+    const file = e.target.files[0];
+    if (file) await parseAndPreview(file);
+}
+
+async function parseAndPreview(file) {
+    if (!state.apiKey) { toast('请先配置 API Key', 'error'); return; }
+
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+        const resp = await fetch('/api/parse-file', { method: 'POST', body: form });
+        const data = await resp.json();
+        if (!data.success) { toast(data.error, 'error'); return; }
+
+        state.novelText = data.text;
+        document.getElementById('file-info').textContent =
+            `✅ ${data.filename} (${data.file_type}) · ${data.char_count.toLocaleString()} 字`;
+        document.getElementById('file-info').classList.remove('hidden');
+        await previewChapters();
+    } catch (err) {
+        toast('文件上传失败: ' + err.message, 'error');
+    }
+}
+
+// ============================================================
+// 第3步：章节预览
+// ============================================================
+async function previewChapters() {
+    // 检查是否有粘贴的文本
+    const pasted = document.getElementById('paste-area').value.trim();
+    if (pasted) state.novelText = pasted;
+
+    if (!state.novelText) { toast('请先上传文件或粘贴文本', 'error'); return; }
+    if (!state.apiKey) { toast('请先配置 API Key', 'error'); return; }
+
+    try {
+        const resp = await fetch('/api/preview-chapters', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: state.novelText, api_key: state.apiKey })
+        });
+        const data = await resp.json();
+        if (!data.success) { toast(data.error, 'error'); return; }
+
+        state.chapters = data.chapters;
+        let html = `<p style="margin-bottom:10px;">共识别 <b>${data.chapter_count}</b> 个章节：</p><div class="chapter-list">`;
+        data.chapters.forEach(ch => {
+            html += `<div class="chapter-tag"><div class="title">${esc(ch.title)}</div><div class="meta">${ch.char_count.toLocaleString()} 字</div></div>`;
+        });
+        html += '</div>';
+        document.getElementById('chapter-preview').innerHTML = html;
+        document.getElementById('step-chapters').classList.remove('hidden');
+    } catch (err) {
+        toast('章节预览失败: ' + err.message, 'error');
+    }
+}
+
+// ============================================================
+// 第4步：转换
+// ============================================================
+async function startConvert() {
+    if (!state.novelText || !state.apiKey) { toast('缺少文本或 API Key', 'error'); return; }
+
+    document.getElementById('step-progress').classList.remove('hidden');
+    document.getElementById('step-result').classList.add('hidden');
+    document.getElementById('btn-convert').disabled = true;
+
+    try {
+        const resp = await fetch('/api/convert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: state.novelText, api_key: state.apiKey })
+        });
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            // 解析 SSE 事件
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';  // 剩余不完整的行放回 buffer
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const event = JSON.parse(line.slice(6));
+                        handleSSE(event);
+                    } catch (e) { /* skip parse errors */ }
+                }
+            }
+        }
+    } catch (err) {
+        toast('转换失败: ' + err.message, 'error');
+        document.getElementById('btn-convert').disabled = false;
+    }
+}
+
+function handleSSE(event) {
+    switch (event.type) {
+        case 'chapters':
+            state.chapters = event.data;
+            document.getElementById('progress-text').textContent =
+                `章节识别完成，共 ${event.count} 章，开始逐章转换...`;
+            break;
+        case 'progress':
+            if (event.status === 'start') {
+                document.getElementById('progress-text').textContent =
+                    `⏳ 开始处理：${event.title} (${event.current}/${event.total})`;
+            } else {
+                const pct = event.percent + '%';
+                document.getElementById('progress-fill').style.width = pct;
+                document.getElementById('progress-text').textContent =
+                    `✅ 完成：${event.title} (${event.current}/${event.total})`;
+                updateReviseChapterSelect(event.title);
+            }
+            break;
+        case 'done':
+            document.getElementById('progress-fill').style.width = '100%';
+            document.getElementById('progress-text').textContent = '✅ 转换完成！';
+            document.getElementById('btn-convert').disabled = false;
+            state.scriptResult = event.result;
+            showResult(event.result, event.scene_count);
+            document.getElementById('step-result').classList.remove('hidden');
+            break;
+        case 'error':
+            document.getElementById('progress-text').textContent = '❌ ' + event.message;
+            document.getElementById('btn-convert').disabled = false;
+            toast(event.message, 'error');
+            break;
+    }
+}
+
+let _chapterTitles = [];
+function updateReviseChapterSelect(title) {
+    if (!_chapterTitles.includes(title)) {
+        _chapterTitles.push(title);
+        const sel = document.getElementById('revise-chapter');
+        sel.innerHTML = _chapterTitles.map(t => `<option value="${t}">${t}</option>`).join('');
+    }
+}
+
+// ============================================================
+// 第5步：结果展示
+// ============================================================
+function showResult(result, sceneCount) {
+    document.getElementById('scene-count').textContent = `共 ${sceneCount} 个场景`;
+    document.getElementById('yaml-output').textContent = yamlDump(result);
+    renderVisual(result);
+}
+
+function yamlDump(obj, indent = 0) {
+    // 简化版 YAML 序列化
+    let out = '';
+    const pad = '  '.repeat(indent);
+    if (obj === null || obj === undefined) return 'null';
+    if (typeof obj === 'string') {
+        if (obj.includes(':') || obj.includes('#') || obj.includes("'")) return `"${obj}"`;
+        return obj;
+    }
+    if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
+    if (Array.isArray(obj)) {
+        if (obj.length === 0) return '[]';
+        for (const item of obj) {
+            if (typeof item === 'object' && item !== null) {
+                out += `${pad}- `;
+                const inner = yamlDump(item, indent + 1).trimStart();
+                out += inner.startsWith('- ') ? '\n' + inner : inner + '\n';
+            } else {
+                out += `${pad}- ${yamlDump(item)}\n`;
+            }
+        }
+        return out;
+    }
+    // object
+    for (const [key, val] of Object.entries(obj)) {
+        if (val === null || val === undefined || val === '' || (Array.isArray(val) && val.length === 0)) {
+            out += `${pad}${key}: []\n`;
+        } else if (Array.isArray(val) && val.length > 0 && typeof val[0] !== 'object') {
+            out += `${pad}${key}: [${val.map(v => yamlDump(v)).join(', ')}]\n`;
+        } else if (typeof val === 'object' && !Array.isArray(val)) {
+            out += `${pad}${key}:\n${yamlDump(val, indent + 1)}`;
+        } else if (Array.isArray(val)) {
+            out += `${pad}${key}:\n${yamlDump(val, indent + 1)}`;
+        } else {
+            out += `${pad}${key}: ${yamlDump(val)}\n`;
+        }
+    }
+    return out;
+}
+
+function renderVisual(result) {
+    const scenes = result.scenes || [];
+    let html = '';
+    scenes.forEach(s => {
+        html += `<div class="scene-card">
+            <h3>🎬 场景 ${s.scene_id} · ${esc(s.location || '未知地点')}</h3>
+            <p class="loc">${esc(s.summary || '')}</p>`;
+        if (s.characters_present && s.characters_present.length) {
+            html += `<p style="font-size:0.8rem;color:var(--muted);">出场：${s.characters_present.map(c => esc(c.name)).join('、')}</p>`;
+        }
+        (s.dialogues || []).forEach(d => {
+            html += `<div class="dialogue-block">
+                <p class="speaker">${esc(d.speaker)}</p>`;
+            (d.lines || []).forEach(l => { html += `<p class="line">${esc(l)}</p>`; });
+            if (d.tone) html += `<p class="meta">🗣 ${esc(d.tone)}</p>`;
+            if (d.action) html += `<p class="meta">🎭 ${esc(d.action)}</p>`;
+            html += `</div>`;
+        });
+        if (s.scene_notes) html += `<p style="font-size:0.8rem;color:var(--warn);margin-top:8px;">📝 ${esc(s.scene_notes)}</p>`;
+        html += '</div>';
+    });
+    document.getElementById('visual-output').innerHTML = html || '<p style="color:var(--muted);">暂无场景数据</p>';
+}
+
+function switchView(view) {
+    document.querySelectorAll('#view-tabs .tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    ['yaml','visual','revise'].forEach(v => {
+        document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
+    });
+}
+
+// ============================================================
+// 修改功能
+// ============================================================
+async function reviseScript() {
+    const feedback = document.getElementById('revise-feedback').value.trim();
+    if (!feedback) { toast('请输入修改意见', 'error'); return; }
+    if (!state.apiKey) { toast('请先配置 API Key', 'error'); return; }
+
+    document.getElementById('revise-progress').classList.remove('hidden');
+
+    // 找到当前已有 YAML（取第一个场景所属章节的原文——简化处理，用全文）
+    try {
+        const resp = await fetch('/api/revise', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chapter_text: state.novelText,
+                existing_yaml: yamlDump(state.scriptResult),
+                feedback: feedback,
+                api_key: state.apiKey
+            })
+        });
+        const data = await resp.json();
+        document.getElementById('revise-progress').classList.add('hidden');
+
+        if (data.success) {
+            state.scriptResult = data.result;
+            showResult(data.result, data.scene_count);
+            toast('剧本已更新！', 'success');
+            switchView('visual');
+            document.getElementById('revise-feedback').value = '';
+        } else {
+            toast(data.error, 'error');
+        }
+    } catch (err) {
+        document.getElementById('revise-progress').classList.add('hidden');
+        toast('修改失败: ' + err.message, 'error');
+    }
+}
+
+// ============================================================
+// 下载 / 复制
+// ============================================================
+function downloadYaml() {
+    if (!state.scriptResult) return;
+    const yaml = yamlDump(state.scriptResult);
+    const blob = new Blob([yaml], { type: 'text/yaml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'script.yaml';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+async function copyYaml() {
+    if (!state.scriptResult) return;
+    const yaml = yamlDump(state.scriptResult);
+    await navigator.clipboard.writeText(yaml);
+    toast('已复制到剪贴板', 'success');
+}
+
+// ============================================================
+// 工具函数
+// ============================================================
+function esc(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg, type) {
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+}
+</script>
+</body>
+</html>
