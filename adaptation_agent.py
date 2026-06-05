@@ -239,7 +239,7 @@ def generate_adaptation_strategy(
         chapter_summary=ch_info
     )
 
-    system = "你是一位资深剧本改编顾问，拥有 20 年从业经验，擅长将小说转化为可拍摄的影视剧本。你的建议专业、具体、可操作。"
+    system = "你是一位剧本改编顾问，擅长分析小说结构并给出可操作的影视改编建议。回答简洁专业，不寒暄，不自我介绍，直接输出分析内容。"
 
     response = call_llm(llm_client, system, prompt, temperature=0.6, max_tokens=2048)
     return response
