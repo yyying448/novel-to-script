@@ -73,7 +73,9 @@ def analyze_scene_duration(scene: Dict) -> float:
     dialogue_lines = 0
     for d in scene.get("dialogues", []):
         if d and d.get("lines"):
-            dialogue_lines += len(d["lines"])
+            lines = d["lines"]
+            if isinstance(lines, list):
+                dialogue_lines += len(lines)
     base += dialogue_lines * 0.1
 
     # 复杂调度加分
@@ -199,6 +201,8 @@ def analyze_all_scenes(scenes: List[Dict]) -> List[Dict]:
     """
     对全部场景进行完整分析，结果附加到每个场景上
     """
+    if not scenes:
+        return []
     total = len(scenes)
     for i, scene in enumerate(scenes):
         scene["estimated_duration"] = analyze_scene_duration(scene)
