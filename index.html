@@ -555,6 +555,51 @@ function renderCharacters(chars) {
     document.getElementById('characters-output').innerHTML = html;
 }
 
+function recomputeCharacters(scenes) {
+    // 从所有场景中重新统计角色数据（修改剧本后保持角色档案同步）
+    const map = {};
+    scenes.forEach(s => {
+        const ch = s.chapter || '未知';
+        (s.characters_present || []).forEach(c => {
+            if (!c || !c.name) return;
+            const name = c.name;
+            if (!map[name]) {
+                map[name] = {
+                    name: name,
+                    role: c.role || '配角',
+                    chapters: [],
+                    scene_count: 0,
+                    dialogue_count: 0,
+                    personality: '',
+                    speech_style: '',
+                    identity: '',
+                    relationships: {},
+                    first_chapter: ch,
+                    chapters_count: 0,
+                };
+            }
+            const p = map[name];
+            if (c.role === '主角' || (p.role !== '主角' && c.role === '重要配角')) {
+                p.role = c.role;
+            }
+            if (!p.chapters.includes(ch)) p.chapters.push(ch);
+            p.scene_count++;
+            // 统计本场景台词
+            const dCount = (s.dialogues || []).filter(
+                d => d && d.speaker === name
+            ).length;
+            p.dialogue_count += dCount;
+        });
+    });
+    const result = Object.values(map);
+    result.forEach(c => { c.chapters_count = c.chapters.length; });
+    result.sort((a, b) => {
+        const roleOrder = { '主角': 0, '重要配角': 1 };
+        return (roleOrder[a.role] ?? 2) - (roleOrder[b.role] ?? 2) || b.scene_count - a.scene_count;
+    });
+    return result;
+}
+
 function switchView(view) {
     const tabs = document.querySelectorAll('#view-tabs .tab');
     const views = ['yaml', 'visual', 'characters', 'revise'];
@@ -619,7 +664,10 @@ async function reviseScript() {
             // 重新编号
             merged.forEach((s, i) => { s.scene_id = i + 1; });
             state.scriptResult = { scenes: merged };
+            // 重新统计角色档案
+            state.scriptResult.characters = recomputeCharacters(merged);
             showResult(state.scriptResult, merged.length);
+            renderCharacters(state.scriptResult.characters);
             toast('✅ 剧本已更新！', 'success');
             switchView('visual');
             document.getElementById('revise-feedback').value = '';
