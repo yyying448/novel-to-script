@@ -185,11 +185,12 @@ async def convert(req: ConvertRequest):
                     "percent": round(current / total * 100) if total > 0 else 0
                 }, event_loop)
 
-            def on_partial(scenes: list, completed: int, total: int):
-                """每完成 N 章推送一次中间结果（实时剧本）"""
+            def on_partial(scenes: list, characters: list, completed: int, total: int):
+                """每完成 N 章推送一次中间结果（含角色档案）"""
                 _put_sync(queue, {
                     "type": "partial",
                     "scenes": scenes,
+                    "characters": characters,
                     "completed": completed,
                     "total": total
                 }, event_loop)
@@ -200,14 +201,16 @@ async def convert(req: ConvertRequest):
                 partial_callback=on_partial
             )
 
-            # 推送最终结果（含章节映射）
+            # 推送最终结果（含章节映射和角色档案）
             scene_count = len(result.get("scenes", []))
+            char_count = result.get("character_count", 0)
             _put_sync(queue, {
                 "type": "done",
                 "result": result,
                 "scene_count": scene_count,
                 "chapter_count": len(chapters),
-                "chapter_map": ch_map
+                "chapter_map": ch_map,
+                "character_count": char_count
             }, event_loop)
 
         except Exception as e:

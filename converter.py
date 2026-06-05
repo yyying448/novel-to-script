@@ -12,15 +12,18 @@ from typing import Callable, Optional, Dict, Any, List, Tuple
 
 from chapter_splitter import split_chapters, chunk_long_chapter
 from prompts import SYSTEM_PROMPT, CONVERT_CHAPTER_PROMPT, REVISE_SCRIPT_PROMPT
+from character_manager import CharacterManager
 
 MAX_CONCURRENT_CHAPTERS = 3
 PARTIAL_RESULT_INTERVAL = 3
 
 
 def _convert_single_chapter(
-    chapter: Dict[str, str], llm_client
+    chapter: Dict[str, str], llm_client, character_profiles: str = ""
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
+    转换单个章节，返回 (章节标题, 场景列表)
+    接受 character_profiles 注入角色一致性约束
     转换单个章节，返回 (章节标题, 场景列表)
     每个场景自动标注所属章节
     """
@@ -31,7 +34,10 @@ def _convert_single_chapter(
     chapter_scenes = []
 
     for chunk in sub_chunks:
-        prompt = CONVERT_CHAPTER_PROMPT.format(chapter_text=chunk["content"])
+        prompt = CONVERT_CHAPTER_PROMPT.format(
+            character_profiles=character_profiles,
+            chapter_text=chunk["content"]
+        )
         response_text = call_llm(llm_client, SYSTEM_PROMPT, prompt)
         chunk_scenes = _parse_llm_yaml(response_text)
         # 为每个场景打上章节标签
@@ -75,6 +81,9 @@ def convert_novel_to_script(
     for ch in valid_chapters:
         chapter_map[ch["title"]] = ch["content"]
 
+    # ===== 角色一致性引擎 =====
+    char_manager = CharacterManager()
+
     # chapter_results[i] = (title, scenes)
     chapter_results: List[Optional[Tuple[str, List[Dict]]]] = [None] * total
     last_partial_at = 0
@@ -84,7 +93,13 @@ def convert_novel_to_script(
         for idx, chapter in enumerate(valid_chapters):
             if progress_callback:
                 progress_callback(idx + 1, total, chapter["title"], "start")
-            future = executor.submit(_convert_single_chapter, chapter, llm_client)
+
+            # 获取当前已知角色档案（第一章为空，后续逐渐积累）
+            char_inject = char_manager.get_consistency_prompt(chapter["title"])
+
+            future = executor.submit(
+                _convert_single_chapter, chapter, llm_client, char_inject
+            )
             future_to_idx[future] = idx
 
         for future in as_completed(future_to_idx):
@@ -94,6 +109,8 @@ def convert_novel_to_script(
             try:
                 title, scenes = future.result()
                 chapter_results[idx] = (title, scenes)
+                # 注册本章角色（零额外 LLM 开销）
+                char_manager.register_from_scenes(scenes, title)
             except Exception as e:
                 chapter_results[idx] = (chapter["title"], [{
                     "chapter": chapter["title"],
@@ -109,15 +126,23 @@ def convert_novel_to_script(
             if progress_callback:
                 progress_callback(completed_count, total, chapter["title"], "done")
 
-            # 每 N 章推送中间结果
+            # 每 N 章推送中间结果（含角色数据）
             if partial_callback and completed_count - last_partial_at >= PARTIAL_RESULT_INTERVAL:
                 last_partial_at = completed_count
                 partial_scenes = _assemble_scenes(chapter_results)
-                partial_callback(partial_scenes, completed_count, total)
+                partial_characters = char_manager.get_summary()
+                partial_callback(partial_scenes, partial_characters, completed_count, total)
 
     # 组装最终结果
     all_scenes = _assemble_scenes(chapter_results)
-    return {"scenes": all_scenes, "chapter_map": chapter_map}
+    characters_summary = char_manager.get_summary()
+
+    return {
+        "scenes": all_scenes,
+        "chapter_map": chapter_map,
+        "characters": characters_summary,
+        "character_count": len(characters_summary)
+    }
 
 
 def _assemble_scenes(

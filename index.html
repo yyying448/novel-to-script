@@ -150,10 +150,12 @@
         <div class="tabs" id="view-tabs">
             <button class="tab active" onclick="switchView('yaml')">📄 YAML</button>
             <button class="tab" onclick="switchView('visual')">🎬 可视化</button>
+            <button class="tab" onclick="switchView('characters')">👥 角色档案</button>
             <button class="tab" onclick="switchView('revise')">✏️ 修改</button>
         </div>
         <div class="result-area" id="view-yaml"><pre id="yaml-output"></pre></div>
         <div class="result-area hidden" id="view-visual"><div id="visual-output"></div></div>
+        <div class="result-area hidden" id="view-characters"><div id="characters-output"></div></div>
         <div class="result-area hidden" id="view-revise">
             <label>修改意见（描述你希望调整的地方）</label>
             <textarea id="revise-feedback" placeholder="例如：对话太少，希望增加人物互动；场景1的 tone 应该更愤怒..."></textarea>
@@ -384,9 +386,12 @@ function handleSSE(event) {
             document.getElementById('step-result').classList.remove('hidden');
             break;
         case 'partial':
-            // 中间结果：实时展示已完成章节的剧本
-            state.scriptResult = { scenes: event.scenes };
+            // 中间结果：实时展示已完成章节的剧本 + 角色档案
+            state.scriptResult = { scenes: event.scenes, characters: event.characters };
             showResult(state.scriptResult, event.scenes.length);
+            if (event.characters && event.characters.length) {
+                renderCharacters(event.characters);
+            }
             document.getElementById('step-result').classList.remove('hidden');
             document.getElementById('progress-text').textContent =
                 `📝 已完成 ${event.completed}/${event.total} 章，剧本实时预览中...`;
@@ -416,9 +421,14 @@ function updateReviseChapterSelect(title) {
 // 第5步：结果展示
 // ============================================================
 function showResult(result, sceneCount) {
-    document.getElementById('scene-count').textContent = `共 ${sceneCount} 个场景`;
+    const charCount = result.characters ? result.characters.length : 0;
+    document.getElementById('scene-count').textContent =
+        `共 ${sceneCount} 个场景 · ${charCount} 个角色`;
     document.getElementById('yaml-output').textContent = yamlDump(result);
     renderVisual(result);
+    if (result.characters && result.characters.length) {
+        renderCharacters(result.characters);
+    }
 }
 
 function yamlDump(obj, indent = 0) {
@@ -506,9 +516,48 @@ function renderVisual(result) {
     document.getElementById('visual-output').innerHTML = html;
 }
 
+function renderCharacters(chars) {
+    if (!chars || !chars.length) {
+        document.getElementById('characters-output').innerHTML =
+            '<p style="color:var(--muted);">暂无角色数据</p>';
+        return;
+    }
+    let html = '';
+    chars.forEach(c => {
+        const chCount = c.chapters_count || c.chapters?.length || 0;
+        html += `<div class="scene-card">
+            <h3>${c.role === '主角' ? '⭐' : c.role === '重要配角' ? '🔶' : '👤'} ${esc(c.name)} <span style="font-size:0.8rem;color:var(--muted);">${esc(c.role)}</span></h3>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.85rem;">
+                <div><b>出场章节：</b>${chCount} 章</div>
+                <div><b>出场场景：</b>${c.scene_count || 0} 次</div>
+                <div><b>台词句数：</b>${c.dialogue_count || 0} 句</div>
+                <div><b>首次出场：</b>${esc(c.first_chapter || '未知')}</div>
+            </div>`;
+        if (c.personality) {
+            html += `<p style="margin-top:8px;font-size:0.85rem;"><b>性格：</b>${esc(c.personality)}</p>`;
+        }
+        if (c.speech_style) {
+            html += `<p style="font-size:0.85rem;"><b>说话风格：</b>${esc(c.speech_style)}</p>`;
+        }
+        if (c.identity) {
+            html += `<p style="font-size:0.85rem;"><b>身份：</b>${esc(c.identity)}</p>`;
+        }
+        if (c.relationships && Object.keys(c.relationships).length) {
+            html += `<p style="font-size:0.85rem;"><b>关系：</b>`;
+            html += Object.entries(c.relationships).map(([k, v]) => `${esc(k)} → ${esc(v)}`).join('；');
+            html += '</p>';
+        }
+        if (c.chapters && c.chapters.length) {
+            html += `<p style="font-size:0.8rem;color:var(--muted);margin-top:4px;">📖 ${c.chapters.map(esc).join(' → ')}</p>`;
+        }
+        html += '</div>';
+    });
+    document.getElementById('characters-output').innerHTML = html;
+}
+
 function switchView(view) {
     const tabs = document.querySelectorAll('#view-tabs .tab');
-    const views = ['yaml', 'visual', 'revise'];
+    const views = ['yaml', 'visual', 'characters', 'revise'];
     tabs.forEach((t, i) => t.classList.toggle('active', views[i] === view));
     views.forEach(v => {
         document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
