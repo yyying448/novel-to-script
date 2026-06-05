@@ -216,18 +216,11 @@ def analyze_all_scenes(scenes: List[Dict]) -> List[Dict]:
 def generate_adaptation_strategy(
     novel_preview: str,
     chapter_summary: List[Dict],
-    llm_client
+    llm_client,
+    model: str = "deepseek-chat",
 ) -> str:
     """
     调用 LLM 生成改编策略报告
-
-    Args:
-        novel_preview: 小说开头 ~5000 字预览
-        chapter_summary: 章节摘要列表
-        llm_client: LLM 客户端
-
-    Returns:
-        Markdown 格式的改编策略报告
     """
     from llm_client import call_llm
     from prompts import ADAPTATION_STRATEGY_PROMPT
@@ -245,8 +238,108 @@ def generate_adaptation_strategy(
 
     system = "你是一位剧本改编顾问，擅长分析小说结构并给出可操作的影视改编建议。回答简洁专业，不寒暄，不自我介绍，直接输出分析内容。"
 
-    response = call_llm(llm_client, system, prompt, temperature=0.6, max_tokens=2048)
+    response = call_llm(llm_client, system, prompt, model=model, temperature=0.6, max_tokens=2048)
     return response
+
+
+# ================================================================
+# 分集拆分（按用户设定的单集时长，在章节边界智能切分）
+# ================================================================
+
+def split_into_episodes(
+    scenes: List[Dict],
+    target_minutes: float = 45.0,
+    chapter_map: Optional[Dict[str, str]] = None,
+) -> List[Dict]:
+    """
+    将场景列表按目标单集时长拆分为多集
+
+    算法：
+    1. 按顺序遍历场景，累加 estimated_duration
+    2. 累计时长 >= target_minutes 时，向前找最近章节边界切分
+    3. 不在场景中间切断（始终在章节边界或场景边界切）
+    4. 为每集生成标题和一句话摘要
+
+    Args:
+        scenes: 已含 estimated_duration 的场景列表
+        target_minutes: 目标单集时长（分钟），默认 45
+        chapter_map: 章节标题 → 原文映射（可选）
+
+    Returns:
+        分集列表 [{episode_id, title, summary, scenes, estimated_duration}]
+    """
+    if not scenes:
+        return []
+
+    episodes = []
+    current_ep_scenes = []
+    current_duration = 0.0
+    current_chapters = set()
+    ep_id = 1
+
+    for i, scene in enumerate(scenes):
+        dur = scene.get("estimated_duration", 1.0)
+        chapter = scene.get("chapter", "未知")
+
+        # 检查是否该切分
+        should_split = (
+            current_duration + dur >= target_minutes
+            and current_ep_scenes  # 至少有内容
+            and chapter != current_ep_scenes[-1].get("chapter", "")  # 章节边界
+        )
+
+        # 如果当前集为空或离目标还远，继续累积
+        if not should_split:
+            current_ep_scenes.append(scene)
+            current_duration += dur
+            current_chapters.add(chapter)
+        else:
+            # 保存当前集
+            episodes.append(_make_episode(ep_id, current_ep_scenes, current_chapters))
+            ep_id += 1
+
+            # 开始新集
+            current_ep_scenes = [scene]
+            current_duration = dur
+            current_chapters = {chapter}
+
+    # 最后一集
+    if current_ep_scenes:
+        episodes.append(_make_episode(ep_id, current_ep_scenes, current_chapters))
+
+    return episodes
+
+
+def _make_episode(ep_id: int, scenes: List[Dict], chapters: set) -> Dict:
+    """构建单集对象"""
+    total_dur = round(sum(s.get("estimated_duration", 1.0) for s in scenes), 1)
+    ch_list = [c for c in scenes[0].get("chapter", "未知").split()[0:1]] if scenes else []
+
+    # 生成标题
+    if len(chapters) == 1:
+        ch_name = list(chapters)[0]
+        title = f"第{ep_id}集 · {ch_name}"
+    else:
+        first_ch = scenes[0].get("chapter", "?")
+        last_ch = scenes[-1].get("chapter", "?")
+        title = f"第{ep_id}集 · {first_ch} ~ {last_ch}"
+
+    # 生成摘要（取首尾场景的 summary 拼接）
+    first_summary = scenes[0].get("summary", "") if scenes else ""
+    last_summary = scenes[-1].get("summary", "") if scenes else ""
+    if first_summary and last_summary and first_summary != last_summary:
+        summary = f"{first_summary} → {last_summary}"
+    else:
+        summary = first_summary or f"共 {len(scenes)} 场戏"
+
+    return {
+        "episode_id": ep_id,
+        "title": title,
+        "summary": summary,
+        "scenes": scenes,
+        "scene_count": len(scenes),
+        "estimated_duration": total_dur,
+    }
 
 
 # ================================================================
