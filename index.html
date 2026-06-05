@@ -95,6 +95,7 @@
             <select id="provider-select" onchange="onProviderChange()" style="padding:8px 12px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; font-size:0.9rem;">
                 <option value="deepseek">DeepSeek</option>
             </select>
+            <input type="text" id="model-input" placeholder="模型名（留空用默认）" style="width:150px;font-size:0.85rem;">
             <input type="password" id="api-key" placeholder="API Key" style="flex:1">
             <button onclick="saveApiKey()">保存</button>
         </div>
@@ -229,8 +230,9 @@ function onProviderChange() {
     document.getElementById('custom-url-group').classList.toggle('hidden', p !== 'custom');
     const info = state.providers.find(x => x.key === p);
     if (info) {
+        document.getElementById('model-input').placeholder = `默认：${info.model || '需填写'}`;
         document.getElementById('provider-help').textContent =
-            `Key 获取地址：${info.help}` + (info.model ? ` · 默认模型：${info.model}` : '');
+            `Key 获取地址：${info.help}`;
     }
 }
 
@@ -244,9 +246,11 @@ async function saveApiKey() {
     state.apiKey = key;
     state.provider = document.getElementById('provider-select').value;
     state.customUrl = document.getElementById('custom-url')?.value?.trim() || '';
+    state.model = document.getElementById('model-input')?.value?.trim() || '';
     localStorage.setItem('ds_api_key', key);
     localStorage.setItem('llm_provider', state.provider);
     localStorage.setItem('llm_custom_url', state.customUrl);
+    localStorage.setItem('llm_model', state.model);
 
     const btn = document.querySelector('#step-api-key button');
     const origText = btn.textContent;
@@ -278,10 +282,12 @@ async function saveApiKey() {
 }
 
 function getApiParams(extra = {}) {
+    const modelInput = document.getElementById('model-input')?.value?.trim() || null;
     return Object.assign({
         api_key: state.apiKey,
         provider: state.provider,
-        base_url: state.customUrl || null
+        base_url: state.customUrl || null,
+        model: modelInput
     }, extra);
 }
 
