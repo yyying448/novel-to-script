@@ -195,7 +195,14 @@ export default function App() {
         const chars = recomputeCharacters(merged)
         const newResult = { ...scriptResult, scenes: merged, characters: chars, character_count: chars.length }
         setScriptResult(newResult)
-        setTab("visual")  // 自动跳转到可视化查看效果
+        // 同步更新 allResults 中当前模型的数据
+        setAllResults(prev => {
+          const n = [...prev]
+          const idx = activeModelIdxRef.current
+          if (n[idx]) n[idx] = { ...n[idx], scenes: merged, characters: chars, character_count: chars.length }
+          return n
+        })
+        setTab("visual")
         showToast("✅ " + revChapter + " 修改成功（" + newScenes.length + "场）")
         setRevFeedback("")
       } else {
