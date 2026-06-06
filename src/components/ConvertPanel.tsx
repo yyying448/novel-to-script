@@ -115,7 +115,15 @@ export default function ConvertPanel(p: any) {
               </div>
               <div className="flex gap-3">
                 <button onClick={()=>{setEditing(null);setAiResult("")}} className="px-5 py-2 border border-gray-300 rounded-full text-sm text-gray-600 hover:bg-gray-50">取消</button>
-                <button onClick={()=>{p.setNovelText(editText);setEditing(null)}} className="px-5 py-2 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800">保存修改</button>
+                <button onClick={()=>{
+                  const oldContent = p.chapterMap?.[editing] || ""
+                  if (oldContent && p.novelText.includes(oldContent)) {
+                    p.setNovelText(p.novelText.replace(oldContent, editText))
+                  } else {
+                    p.setNovelText(editText)  // fallback
+                  }
+                  setEditing(null)
+                }} className="px-5 py-2 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800">保存修改</button>
               </div>
             </div>
           </div>

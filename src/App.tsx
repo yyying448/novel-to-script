@@ -119,7 +119,7 @@ export default function App() {
 
   const handleSSE = useCallback((e: SSEEvent) => {
     switch (e.type) {
-      case "chapters": setChapters(prev => (e.data && e.data.length >= prev.length) ? e.data : prev); if (e.data && e.chapter_map) setChapterMap(e.chapter_map); break
+      case "chapters": if (e.data) { setChapters(e.data); setChapterMap(e.chapter_map || {}) } break
       case "strategy": if (e.report) { setStrategyReport(e.report); setTab("strategy") } break
       case "progress": {
         const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
@@ -241,7 +241,7 @@ export default function App() {
         )}
         {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC }} />}
         {tab === "input" && <InputPanel {...{ novelText, setNovelText, handleFile, handlePreview }} />}
-        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText, apiKey, provider, model, customUrl, setRevChapter }} />}
+        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText, novelText, apiKey, provider, model, customUrl, setRevChapter }} />}
         {tab === "strategy" && <StrategyView report={strategyReport} />}
         {tab === "visual" && <VisualView result={scriptResult} />}
         {tab === "characters" && <CharactersView characters={scriptResult.characters||[]} />}
