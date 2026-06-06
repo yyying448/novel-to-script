@@ -1,3 +1,5 @@
+[English](README_EN.md) | 中文
+
 # 📜 AI 小说转剧本工具
 
 基于大语言模型（DeepSeek / OpenAI / 智谱 GLM / Kimi / 通义千问 / 自定义）的智能小说改编剧本工具，支持多模型并行转换与对比评分。上传小说文件，自动识别章节结构，逐章生成结构化剧本 YAML，包含场景划分、口语化台词、表演指导（语气/动作）和编剧备注。
@@ -71,18 +73,20 @@ novel-to-script/
 git clone https://github.com/yyying448/novel-to-script.git
 cd novel-to-script
 
-# 2. 创建虚拟环境
+# 2. 创建虚拟环境并安装后端依赖
 python3 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 3. 安装依赖
 pip install -r requirements.txt
 
-# 4. 启动服务
+# 3. 启动后端
 python main.py
 
-# 5. 打开浏览器访问
-# http://127.0.0.1:8000
+# 4. (可选) 启动 React 前端 —— 打开第二个终端
+cd frontend && npm install && npx vite --host
+
+# 5. 打开浏览器
+# 仅后端：http://127.0.0.1:8000
+# 完整前端：http://localhost:5173
 ```
 
 ### 使用流程
