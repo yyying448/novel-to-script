@@ -16,6 +16,7 @@ from character_manager import CharacterManager
 
 MAX_CONCURRENT_CHAPTERS = 3
 PARTIAL_RESULT_INTERVAL = 3
+_user_requirement = ""
 
 
 def _convert_single_chapter(
@@ -35,10 +36,11 @@ def _convert_single_chapter(
     chapter_scenes = []
 
     for chunk in sub_chunks:
+        extra = "\n=== 用户转换要求 ===\n" + _user_requirement if _user_requirement else ""
         prompt = CONVERT_CHAPTER_PROMPT.format(
             character_profiles=character_profiles,
             chapter_text=chunk["content"]
-        )
+        ) + extra
         response_text = call_llm(llm_client, SYSTEM_PROMPT, prompt, model=model)
         chunk_scenes = _parse_llm_yaml(response_text)
         if not chunk_scenes:
@@ -59,10 +61,25 @@ def convert_novel_to_script(
     progress_callback: Optional[Callable] = None,
     partial_callback: Optional[Callable] = None,
     model: str = "deepseek-chat",
+    requirement: str = "",
 ) -> Dict[str, Any]:
-    """
-    主转换函数：将小说全文转换为剧本
-    """
+    try:
+        return _convert_novel_to_script_impl(novel_text, llm_client, progress_callback, partial_callback, model, requirement)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"scenes": [], "characters": [], "chapter_map": {}, "character_count": 0, "error": str(e)}
+
+def _convert_novel_to_script_impl(
+    novel_text: str,
+    llm_client,
+    progress_callback: Optional[Callable] = None,
+    partial_callback: Optional[Callable] = None,
+    model: str = "deepseek-chat",
+    requirement: str = "",
+) -> Dict[str, Any]:
+    global _user_requirement
+    _user_requirement = requirement
     chapters = split_chapters(novel_text)
     if not chapters:
         return {"scenes": [], "chapter_map": {}, "error": "未能从文本中识别到任何章节"}
@@ -174,9 +191,9 @@ def _assemble_scenes(
     all_scenes = []
     scene_id_counter = 1
     for item in chapter_results:
-        if item:
+        if item and item[1]:
             _title, scenes = item
-            for scene in scenes:
+            for scene in (scenes or []):
                 scene["scene_id"] = scene_id_counter
                 scene_id_counter += 1
             all_scenes.extend(scenes)
@@ -219,7 +236,7 @@ def revise_script(
         )
 
     # 确保每个场景标注所属章节
-    for s in scenes:
+    for s in (scenes or []):
         if not s.get("chapter"):
             s["chapter"] = chapter_title
 

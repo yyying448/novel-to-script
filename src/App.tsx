@@ -131,17 +131,14 @@ export default function App() {
       case "partial": {
         const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
         const cur = activeModelIdxRef.current
-        if (e.scenes) {
-          setAllResults(p => { const n = [...p]; n[i] = { ...n[i], label: e.label || "模型 A", scenes: e.scenes || [], characters: e.characters || [], character_count: (e.characters || []).length, episodes: [], episode_count: 0, runtime: {} }; return n })
-          if (i === cur || (i === 0 && cur === 0)) setScriptResult({ scenes: e.scenes, characters: e.characters })
-        }
+        const s = e.scenes || []; const c = e.characters || []
+        setAllResults(p => { const n = [...p]; n[i] = { ...n[i], label: e.label || "模型 A", scenes: s, characters: c, character_count: c.length, episodes: [], episode_count: 0, runtime: {} }; return n })
+        if (i === cur || (i === 0 && cur === 0)) setScriptResult({ scenes: s, characters: c })
         break
       }
       case "model_done":
         setLanes(p => { const n = [...p]; const i = e.idx || 0; n[i] = { ...n[i], done: true, error: e.error }; return n })
-        if (e.scenes) {
-          setAllResults(p => { const n = [...p]; n[e.idx || 0] = { label: e.label || "", scenes: e.scenes || [], characters: e.characters || [], episodes: e.episodes || [], runtime: e.runtime || {}, character_count: e.character_count || 0, episode_count: e.episode_count || 0, error: e.error }; return n })
-        }
+        setAllResults(p => { const n = [...p]; n[e.idx || 0] = { label: e.label || "", scenes: e.scenes || [], characters: e.characters || [], episodes: e.episodes || [], runtime: e.runtime || {}, character_count: e.character_count || 0, episode_count: e.episode_count || 0, error: e.error }; return n })
         break
       case "compare": if (e.results) setCompareResults(e.results); break
       case "done":
@@ -154,7 +151,7 @@ export default function App() {
     }
   }, [])
 
-  const handleConvert = () => {
+  const handleConvert = (checkedChapters?: Set<string>, requirement?: string) => {
     // 合并章节编辑到全文
     let text = novelText
     for (const [title, content] of Object.entries(editedChapterMap)) {
@@ -165,8 +162,11 @@ export default function App() {
     }
     setConverting(true); setAllResults([]); setScriptResult({}); setStrategyReport(""); setCompareResults([])
     setLanes([{ label: "模型 A", current: 0, total: chapters.length || 1, status: "等待中...", percent: 0, done: false }])
+    const selected = checkedChapters && checkedChapters.size > 0 ? [...checkedChapters] : []
     api.convertNovel({
       ...apiParams({ text }), episode_minutes: epMinutes,
+      selected_chapters: JSON.stringify(selected),
+      requirement: requirement || "",
       compare_keys: JSON.stringify([cmpKeyB, cmpKeyC].filter(Boolean)),
       compare_models: JSON.stringify([cmpModelB, cmpModelC].filter(Boolean)),
       compare_providers: JSON.stringify([cmpProvB, cmpProvC].filter(Boolean)),
