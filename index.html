@@ -774,6 +774,12 @@ function renderVisual(result) {
 function renderCompare(results) {
     if (!results || !results.length) return;
     document.getElementById('tab-compare').style.display = '';
+    const criteria = `
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:12px;padding:8px;background:var(--bg);border-radius:6px;">
+            📋 评判标准：<b>对话自然度</b>（台词是否口语化）、<b>场景完整性</b>（信息是否齐全）、
+            <b>叙事流畅度</b>（衔接是否自然）、<b>角色一致性</b>（跨章节人设是否统一）
+            &nbsp;每项 1-10 分，总分最高标 🏆
+        </div>`;
     // Store all scenes for viewing
     state.compareScenes = {};
     results.forEach(r => { if (r.all_scenes) state.compareScenes[r.label] = r.all_scenes; });
@@ -782,7 +788,7 @@ function renderCompare(results) {
         const s = r.score || {};
         return s.总分 || Object.values(s).reduce((a,b) => a+b, 0) || 0;
     }));
-    let html = '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">';
+    let html = criteria + '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">';
     results.forEach((r, i) => {
         const score = r.score || {};
         const total = score.总分 || Object.values(score).reduce((a,b) => a+b, 0) || 0;
@@ -846,9 +852,13 @@ function viewCompareScript(label) {
 }
 
 function renderEpisodes(episodes) {
+    const epInput = document.getElementById('episode-minutes');
+    const hasSetting = epInput && parseFloat(epInput.value) > 0;
     if (!episodes || !episodes.length) {
-        document.getElementById('episodes-output').innerHTML =
-            '<p style="color:var(--muted);">未设置分集（单集时长设为 0 或未启用）</p>';
+        const msg = hasSetting
+            ? '<p style="color:var(--muted);">⏳ 剧本生成中，分集将在转换完成后自动生成，请稍候...</p>'
+            : '<p style="color:var(--muted);">💡 提示：在开始转换前设置"单集时长"（如 45 分钟），即可自动按章节边界拆分为剧集。<br>当前未设置，如需分集请设置后重新转换。</p>';
+        document.getElementById('episodes-output').innerHTML = msg;
         return;
     }
     let html = '';
