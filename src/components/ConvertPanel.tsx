@@ -112,12 +112,15 @@ export default function ConvertPanel(p: any) {
           ))}
         </div>
       )}
-      {p.allResults.filter(Boolean).length>0&&(
-        <div className="mt-5 flex items-center gap-2 text-sm"><span className="text-gray-500 font-medium">查看</span>
+      <div className="mt-5 flex items-center gap-2 text-sm">
+        <span className="text-gray-500 font-medium">查看</span>
         <select value={p.activeModelIdx} onChange={e=>p.viewModel(+e.target.value)} className="px-3 py-1.5 bg-white border border-gray-300 rounded-full text-sm text-black outline-none">
-          {p.allResults.filter(Boolean).map((r:any,i:number)=><option key={i} value={i}>{r.label}（{(r.scenes||[]).length}场）</option>)}
-        </select></div>
-      )}
+          {(p.allResults||[]).filter(Boolean).length>0
+            ? p.allResults.filter(Boolean).map((r:any,i:number)=><option key={i} value={i}>{r.label}（{(r.scenes||[]).length}场）</option>)
+            : <option value={0}>模型 A</option>
+          }
+        </select>
+      </div>
       {editing && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={()=>{setEditing(null);setAiResult("")}}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] flex flex-col shadow-xl" onClick={e=>e.stopPropagation()}>
