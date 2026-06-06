@@ -173,9 +173,12 @@
     <!-- 第5步：结果展示 -->
     <div class="card hidden" id="step-result">
         <h2>5️⃣ 剧本结果</h2>
-        <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap;">
             <button id="btn-download" onclick="downloadYaml()">⬇ 下载 YAML</button>
             <button class="btn-outline" onclick="copyYaml()">📋 复制 YAML</button>
+            <span id="model-selector" style="display:none; margin-left:8px; font-size:0.85rem; color:var(--muted);">
+                查看：<select id="view-model-select" onchange="switchModelView()" style="padding:4px 8px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px;"></select>
+            </span>
             <span style="margin-left:auto; color:var(--muted);" id="scene-count"></span>
         </div>
         <div class="tabs" id="view-tabs">
@@ -546,14 +549,43 @@ function handleSSE(event) {
             break;
         case 'model_done':
             if (event.label) markModelDone(event);
+            // 立刻加入模型选择器
+            if (!state.allResults) state.allResults = [];
+            const doneIdx = event.idx ?? state.allResults.length;
+            state.allResults[doneIdx] = {
+                label: event.label,
+                scenes: event.scenes || [],
+                characters: event.characters || [],
+                episodes: event.episodes || [],
+                runtime: event.runtime || {},
+                character_count: event.character_count || 0,
+                episode_count: event.episode_count || 0,
+            };
+            state.compareScenes = state.compareScenes || {};
+            state.compareScenes[event.label] = event.scenes || [];
+            // 刷新选择器
+            refreshModelSelector();
+            // 如果是第一个完成的模型，自动展示
+            if (state.allResults.filter(Boolean).length === 1 && event.scenes && event.scenes.length) {
+                state.scriptResult = { scenes: event.scenes, characters: event.characters, episodes: event.episodes, runtime: event.runtime };
+                showResult(state.scriptResult, event.scenes.length);
+                document.getElementById('step-result').classList.remove('hidden');
+            }
             break;
         case 'done':
             updateProgressSummary('✅ 全部完成！');
             document.getElementById('btn-convert').disabled = false;
             state.scriptResult = event.result;
             if (event.runtime) state.runtime = event.runtime;
-            // 存储所有模型结果用于对比
-            if (event.all_results) state.allResults = event.all_results;
+            if (event.all_results && event.all_results.length) {
+                state.allResults = event.all_results;
+                state.activeModelIdx = 0;
+                state.compareScenes = {};
+                event.all_results.forEach(r => { if (r.scenes) state.compareScenes[r.label] = r.scenes; });
+                refreshModelSelector();
+                document.getElementById('tab-compare').style.display = '';
+                updateProgressSummary('✅ 全部完成！下拉切换模型，或查看 🔬 对比');
+            }
             showResult(event.result, event.scene_count);
             document.getElementById('step-result').classList.remove('hidden');
             break;
@@ -757,6 +789,40 @@ function renderCompare(results) {
     });
     html += '</div>';
     document.getElementById('compare-output').innerHTML = html;
+}
+
+function refreshModelSelector() {
+    const sel = document.getElementById('view-model-select');
+    const all = (state.allResults || []).filter(Boolean);
+    if (!all.length) return;
+    sel.innerHTML = all.map((r, i) => {
+        const n = r.scenes ? r.scenes.length : 0;
+        return `<option value="${i}" ${state.activeModelIdx===i?'selected':''}>${esc(r.label)} (${n}场)</option>`;
+    }).join('');
+    document.getElementById('model-selector').style.display = '';
+}
+
+function switchModelView() {
+    const idx = parseInt(document.getElementById('view-model-select')?.value || '0');
+    const all = (state.allResults || []).filter(Boolean);
+    if (!all[idx]) return;
+    state.activeModelIdx = idx;
+    state.scriptResult = {
+        scenes: all[idx].scenes || [],
+        characters: all[idx].characters || [],
+        episodes: all[idx].episodes || [],
+        runtime: all[idx].runtime || {},
+    };
+    showResult(state.scriptResult, (all[idx].scenes||[]).length);
+    if (all[idx].characters && all[idx].characters.length) {
+        renderCharacters(all[idx].characters);
+    }
+    if (all[idx].episodes && all[idx].episodes.length) {
+        renderEpisodes(all[idx].episodes);
+    }
+    state.runtime = all[idx].runtime || null;
+    switchView('visual');
+    toast('📄 已切换至：' + all[idx].label, 'success');
 }
 
 function viewCompareScript(label) {
