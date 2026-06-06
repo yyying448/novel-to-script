@@ -209,6 +209,22 @@ async def convert(req: ConvertRequest):
     total_models = len(model_configs)
     all_results = [None] * total_models
 
+    # 统一计算过滤文本（所有模型共享）
+    from chapter_splitter import split_chapters as _split
+    req_text = req.text
+    if req.selected_chapters:
+        try:
+            selected = _json.loads(req.selected_chapters) if isinstance(req.selected_chapters, str) else req.selected_chapters
+            if selected:
+                chapters_all = _split(req.text)
+                filtered = ""
+                for ch in chapters_all:
+                    if ch["title"] in selected:
+                        filtered += ch["title"] + "\n" + ch["content"] + "\n\n"
+                if filtered: req_text = filtered
+        except Exception:
+            pass
+
     def run_single_model(idx: int, cfg: dict):
         """在独立线程中运行单个模型的完整转换流程"""
         label = cfg["label"]
@@ -237,20 +253,6 @@ async def convert(req: ConvertRequest):
                 chapters = []
                 ch_map = {}
                 strategy_report = None
-
-            # 过滤选中章节（对所有模型生效）
-            req_text = req.text
-            if req.selected_chapters:
-                try:
-                    selected = _json.loads(req.selected_chapters) if isinstance(req.selected_chapters, str) else req.selected_chapters
-                    if selected and chapters:
-                        filtered_text = ""
-                        for ch in chapters:
-                            if ch["title"] in selected:
-                                filtered_text += ch["title"] + "\n" + ch["content"] + "\n\n"
-                        req_text = filtered_text if filtered_text else req.text
-                except Exception:
-                    pass
 
             from converter import convert_novel_to_script
 
