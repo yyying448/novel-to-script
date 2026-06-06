@@ -1,6 +1,6 @@
 # 📜 AI 小说转剧本工具
 
-基于大语言模型（DeepSeek）的智能小说改编剧本工具。上传小说文件，自动识别章节结构，逐章生成结构化剧本 YAML，包含场景划分、口语化台词、表演指导（语气/动作）和编剧备注。
+基于大语言模型（DeepSeek / OpenAI / 智谱 GLM / Kimi / 通义千问 / 自定义）的智能小说改编剧本工具，支持多模型并行转换与对比评分。上传小说文件，自动识别章节结构，逐章生成结构化剧本 YAML，包含场景划分、口语化台词、表演指导（语气/动作）和编剧备注。
 
 ## 🎬 Demo
 
@@ -14,7 +14,7 @@
 |---|---|
 | 📁 多格式解析 | 支持上传 TXT / DOCX / PDF 小说文件 |
 | 📖 智能章节识别 | 正则匹配"第X章""Chapter X"等中英文标题格式 |
-| 🤖 AI 逐章转换 | 调用 DeepSeek API，将叙事文本转为结构化剧本 |
+| 🤖 AI 逐章转换 | 调用 LLM API，将叙事文本转为结构化剧本 |
 | ⚡ 并发加速 | ThreadPoolExecutor 同时处理 3 章，速度提升 3 倍 |
 | 📡 SSE 实时推送 | Server-Sent Events 流式推送转换进度 |
 | ✏️ 二次修改 | 根据用户意见重新生成剧本 |
@@ -44,24 +44,25 @@ scenes:
 
 ```
 novel-to-script/
-├── file_parser.py       # 文件解析模块（txt/docx/pdf）
-├── chapter_splitter.py  # 章节自动识别与切分
-├── llm_client.py        # DeepSeek API 封装（OpenAI 兼容）
-├── prompts.py           # LLM 提示词模板管理
-├── schema.py            # 剧本 YAML Schema 定义与校验
-├── converter.py         # 核心转换逻辑（并发 LLM 调用 + YAML 解析）
-├── main.py              # FastAPI 后端入口（路由 + SSE 流式推送）
-├── templates/
-│   └── index.html       # Web 前端单页应用
-├── requirements.txt     # Python 依赖清单
-└── .gitignore
+├── main.py                 # FastAPI 后端（SSE流式推送+并行多模型）
+├── converter.py            # 核心转换引擎（并发+YAML解析+角色注入）
+├── chapter_splitter.py     # 章节自动识别与切分
+├── character_manager.py    # 角色一致性引擎（跨章节追踪）
+├── adaptation_agent.py     # 改编智能体（策略/时长/难度/冲突检测）
+├── llm_client.py           # 多模型适配层（DeepSeek/OpenAI/GLM等）
+├── prompts.py              # LLM 提示词模板管理
+├── schema.py               # 剧本 YAML Schema 定义与校验
+├── file_parser.py          # 文件解析（txt/docx/pdf）
+├── requirements.txt        # Python 依赖清单
+├── SCHEMA.md               # YAML Schema 设计文档
+└── frontend/               # React + Vite + TypeScript 前端
 ```
 
 ## 🚀 快速开始
 
 ### 环境要求
 - Python 3.9+
-- DeepSeek API Key（从 [platform.deepseek.com](https://platform.deepseek.com/api_keys) 获取）
+- LLM API Key（从对应厂商平台获取，支持 DeepSeek / OpenAI / 智谱 / Kimi / 千问等）
 
 ### 安装与运行
 
@@ -86,7 +87,7 @@ python main.py
 
 ### 使用流程
 
-1. **配置 API Key** — 输入 DeepSeek Key，点击保存自动验证
+1. **配置 LLM** — 选择厂商，输入 API Key，点击验证
 2. **上传小说** — 拖拽文件或粘贴文本（支持 txt/docx/pdf）
 3. **预览章节** — 确认章节切分是否正确
 4. **开始转换** — 点击按钮，实时查看进度
@@ -96,8 +97,8 @@ python main.py
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Web 前端    │────▶│  FastAPI     │────▶│  DeepSeek    │
-│  (SSE 流式)   │◀────│  后端服务     │◀────│  API         │
+│   Web 前端    │────▶│  FastAPI     │────▶│  DeepSeek /   │
+│  (SSE 流式)   │◀────│  后端服务     │◀────│  OpenAI 等    │
 └──────────────┘     └──────────────┘     └──────────────┘
                             │
                     ┌───────┴───────┐
@@ -108,7 +109,7 @@ python main.py
 
 - **后端**：FastAPI + Uvicorn
 - **前端**：原生 HTML/CSS/JS（无框架依赖）
-- **AI 引擎**：DeepSeek Chat API（兼容 OpenAI SDK）
+- **AI 引擎**：多模型支持（DeepSeek / OpenAI / GLM / Kimi / 千问），兼容 OpenAI SDK
 - **并发策略**：ThreadPoolExecutor（max_workers=3），SSE 流式推送进度
 - **超时保护**：LLM 调用 120 秒超时，防止挂死
 
@@ -121,7 +122,7 @@ python main.py
 | FastAPI | Web 框架 | MIT |
 | Uvicorn | ASGI 服务器 | BSD |
 | Jinja2 | 模板渲染 | BSD |
-| OpenAI SDK | LLM API 调用（兼容 DeepSeek） | Apache 2.0 |
+| OpenAI SDK | LLM API 调用（多模型兼容） | Apache 2.0 |
 | PyYAML | YAML 解析与生成 | MIT |
 | python-multipart | 文件上传解析 | Apache 2.0 |
 | python-docx | Word 文档解析 | MIT |
@@ -135,23 +136,11 @@ python main.py
 | `prompts.py` | 剧本改编专用 Prompt 工程 | 设计 6 项改编原则、对话口语化转换策略、tone/action 表演指导生成 |
 | `schema.py` | 剧本 YAML 数据结构设计 | 18 个字段的层级 Schema、完整校验逻辑、LLM 输出容错修复 |
 | `converter.py` | 并发转换编排引擎 | ThreadPoolExecutor 并发调度、YAML 容错解析（处理 LLM 不规则输出）、场景顺序保持 |
-| `main.py` | SSE 流式推送 | Server-Sent Events + asyncio.Queue 跨线程推送进度 |
-| `templates/index.html` | 剧本可视化渲染 | 深色主题 UI、YAML 转可视化剧本卡片、拖拽上传 |
-
-## 📝 开发记录（PR 规范示例）
-
-本项目按以下细粒度 PR 方式开发，每个模块独立提交：
-
-| PR | 内容 | 说明 |
-|---|---|---|
-| #1 | 项目初始化 | 配置依赖与 .gitignore |
-| #2 | 文件解析模块 | 实现 txt/docx/pdf 文本提取 |
-| #3 | 章节切分模块 | 中英文章节标题识别 |
-| #4 | LLM 客户端封装 | DeepSeek API + 超时机制 |
-| #5 | Prompt 模板 | 剧本改编提示词设计 |
-| #6 | Schema 定义 | YAML 结构与校验 |
-| #7 | 核心转换引擎 | 并发转换 + 容错解析 |
-| #8 | 后端 + 前端 | 全栈应用整合 |
+| `main.py` | SSE 流式推送 + 并行多模型 | Server-Sent Events + asyncio.Queue 跨线程推送进度，三模型并行转换 |
+| `character_manager.py` | 角色一致性引擎 | 跨章节角色自动建档、注入、关系推断、深层性格分析 |
+| `adaptation_agent.py` | 改编智能体 | 改编策略报告、场景时长估算、拍摄难度标签、冲突检测 |
+| `llm_client.py` | 多模型适配层 | 厂商注册表+客户端工厂，支持 5 个厂商+自定义接口 |
+| `frontend/` | React 前端 | Vite + TypeScript + Tailwind 组件化 SPA，侧边栏导航 |
 
 ## 📄 许可证
 
