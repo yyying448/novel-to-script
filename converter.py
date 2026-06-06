@@ -236,33 +236,51 @@ def revise_script(
 # ============================================================
 
 def _parse_llm_yaml(text: str) -> list:
-    """第一层：标准 YAML 解析"""
+    """第一层：标准 YAML 解析（改进版，多策略提取）"""
     if not text or not text.strip():
         return []
 
     text = text.strip()
 
-    yaml_pattern = r'```(?:yaml|yml)?\s*\n(.*?)```'
-    matches = re.findall(yaml_pattern, text, re.DOTALL)
-    if matches:
-        text = matches[0].strip()
+    # 1. 提取 markdown 代码块（支持多种格式）
+    for pat in [r'```(?:yaml|yml)\s*\n(.*?)```', r'```\s*\n(.*?)```']:
+        matches = re.findall(pat, text, re.DOTALL)
+        if matches:
+            text = "\n".join(m.strip() for m in matches if m.strip())
+            break
 
-    if not text.startswith("scenes:"):
-        scenes_pos = text.find("\nscenes:")
-        if scenes_pos == -1:
-            scenes_pos = text.find("scenes:")
-        if scenes_pos > 0:
-            text = text[scenes_pos:]
+    # 2. 去掉 YAML 文档分隔符
+    text = re.sub(r'^---\s*$', '', text, flags=re.MULTILINE)
 
+    # 3. 定位 scenes 起始
+    if not text.strip().startswith("scenes:"):
+        for marker in ["\nscenes:", "scenes:"]:
+            pos = text.find(marker)
+            if pos >= 0:
+                text = text[pos:]
+                break
+
+    # 4. 标准 YAML 解析
     try:
         result = yaml.safe_load(text)
         if isinstance(result, dict) and "scenes" in result:
             return result["scenes"]
         elif isinstance(result, list):
             return result
-        return []
     except yaml.YAMLError:
-        return []
+        pass
+
+    # 5. 手动按 scene_id 分块逐个解析
+    blocks = re.split(r'\n\s*-\s+scene_id:', text)
+    scenes = []
+    for block in blocks:
+        if not block.strip(): continue
+        try:
+            r = yaml.safe_load("scene_id:" + block)
+            if isinstance(r, dict): scenes.append(r)
+        except yaml.YAMLError:
+            pass
+    return scenes
 
 
 def _parse_llm_yaml_fallback(text: str) -> list:

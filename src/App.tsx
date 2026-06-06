@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import type { Provider, Chapter, SSEEvent, ScriptResult, ModelResult } from "./types"
 import * as api from "./lib/api"
 import ConfigPanel from "./components/ConfigPanel"
@@ -35,9 +35,63 @@ export default function App() {
 
   useEffect(() => { api.fetchProviders().then(setProviders) }, [])
   useEffect(() => { const t = setTimeout(() => toast && setToast(""), 3000); return () => clearTimeout(t) }, [toast])
+  // 场景加载后自动设置第一个章节为修改目标
+  useEffect(() => {
+    const chs = [...new Set((scriptResult.scenes||[]).map(s=>s.chapter).filter(Boolean))]
+    if (chs.length && !revChapter) setRevChapter(chs[0])
+  }, [scriptResult.scenes])
 
   const apiParams = (extra: any = {}) => ({ text: novelText, api_key: apiKey, provider, model: model || undefined, base_url: customUrl || undefined, ...extra })
   const showToast = (m: string) => setToast(m)
+  const download = (content: string, filename: string, type = "text/plain") => {
+    const b = new Blob([content], { type })
+    const u = URL.createObjectURL(b)
+    const a = document.createElement("a"); a.href = u; a.download = filename; a.click()
+    URL.revokeObjectURL(u)
+  }
+  const downloadWord = () => {
+    const scenes = scriptResult.scenes || []
+    let html = `<html><head><meta charset="utf-8"><style>body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.8;max-width:800px;margin:40px auto}h1{text-align:center}h2{color:#333;border-bottom:2px solid #000;padding-bottom:4px}h3{margin-top:20px}.scene{margin:16px 0;padding:12px;background:#f9f9f9;border-left:3px solid #333}.dialogue{margin:8px 0 8px 20px}.speaker{font-weight:bold}.tone{color:#666;font-size:13px}</style></head><body><h1>剧本</h1>`
+    const groups: Record<string, any[]> = {}; scenes.forEach(s => { const c = s.chapter || "?"; if (!groups[c]) groups[c] = []; groups[c].push(s) })
+    for (const [ch, chs] of Object.entries(groups)) {
+      html += `<h2>${ch}</h2>`
+      chs.forEach(s => {
+        html += `<div class="scene"><h3>场景 ${s.scene_id} · ${s.location||""}</h3><p>${s.summary||""}</p>`
+        if (s.characters_present?.length) html += `<p>出场：${s.characters_present.map((c:any) => c.name).join("、")}</p>`
+        ;(s.dialogues||[]).forEach((d: any) => { html += `<div class="dialogue"><p class="speaker">${d.speaker}</p>`; (d.lines||[]).forEach((l: string) => { html += `<p>${l}</p>` }); if (d.tone||d.action) html += `<p class="tone">${d.tone||""} ${d.action||""}</p>`; html += `</div>` })
+        if (s.scene_notes) html += `<p style="color:#888">📝 ${s.scene_notes}</p>`
+        html += `</div>`
+      })
+    }
+    html += `</body></html>`
+    download(html, "script.doc", "application/msword")
+  }
+  const downloadCharactersWord = () => {
+    const chars = scriptResult.characters || []
+    let html = `<html><head><meta charset="utf-8"><style>body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;line-height:2;max-width:800px;margin:40px auto}h1{text-align:center}h2{color:#333;border-bottom:2px solid #000;padding-bottom:4px}.char{margin:20px 0;padding:16px;background:#f9f9f9}p{margin:4px 0}</style></head><body><h1>角色档案</h1>`
+    chars.forEach((c: any) => {
+      html += `<div class="char"><h2>${c.role==="主角"?"⭐":""} ${c.name}（${c.role}）</h2>`
+      html += `<p>出场：${c.chapters_count||0}章 · ${c.scene_count||0}场景 · ${c.dialogue_count||0}句台词 · 首次：${c.first_chapter||"?"}</p>`
+      if(c.personality) html += `<p><b>性格：</b>${c.personality}</p>`
+      if(c.motivation) html += `<p><b>动机：</b>${c.motivation}</p>`
+      if(c.speech_style) html += `<p><b>说话风格：</b>${c.speech_style}</p>`
+      if(c.identity) html += `<p><b>身份：</b>${c.identity}</p>`
+      if(c.appearance) html += `<p><b>外貌：</b>${c.appearance}</p>`
+      html += `</div>`
+    })
+    html += `</body></html>`
+    download(html, "characters.doc", "application/msword")
+  }
+  const downloadEpisodesWord = () => {
+    const eps = scriptResult.episodes || []
+    let html = `<html><head><meta charset="utf-8"><style>body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.8;max-width:800px;margin:40px auto}h1{text-align:center}h2{border-bottom:2px solid #000;padding-bottom:4px}.scene{margin:8px 0;padding:8px;border-left:3px solid #ccc}p{margin:3px 0}</style></head><body><h1>分集大纲</h1>`
+    eps.forEach((ep: any) => {
+      html += `<h2>${ep.title}（${ep.scene_count}场 · ⏱${ep.estimated_duration}分）</h2><p>${ep.summary}</p>`
+      ;(ep.scenes||[]).forEach((s: any) => { html += `<div class="scene"><p><b>场景${s.scene_id}</b> · ${s.location||""}</p><p>${s.summary||""}</p></div>` })
+    })
+    html += `</body></html>`
+    download(html, "episodes.doc", "application/msword")
+  }
 
   const handleSaveKey = async () => {
     if (!apiKey) return showToast("请输入 API Key")
@@ -60,9 +114,12 @@ export default function App() {
     else showToast(r.error)
   }
 
+  const activeModelIdxRef = useRef(activeModelIdx)
+  activeModelIdxRef.current = activeModelIdx
+
   const handleSSE = useCallback((e: SSEEvent) => {
     switch (e.type) {
-      case "chapters": if (e.data) { setChapters(e.data); setChapterMap(e.chapter_map || {}) } break
+      case "chapters": setChapters(prev => (e.data && e.data.length >= prev.length) ? e.data : prev); if (e.data && e.chapter_map) setChapterMap(e.chapter_map); break
       case "strategy": if (e.report) { setStrategyReport(e.report); setTab("strategy") } break
       case "progress": {
         const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
@@ -71,9 +128,10 @@ export default function App() {
       }
       case "partial": {
         const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
+        const cur = activeModelIdxRef.current
         if (e.scenes) {
           setAllResults(p => { const n = [...p]; n[i] = { ...n[i], label: e.label || "模型 A", scenes: e.scenes || [], characters: e.characters || [], character_count: (e.characters || []).length, episodes: [], episode_count: 0, runtime: {} }; return n })
-          if (i === activeModelIdx || (i === 0 && activeModelIdx === 0)) setScriptResult({ scenes: e.scenes, characters: e.characters })
+          if (i === cur || (i === 0 && cur === 0)) setScriptResult({ scenes: e.scenes, characters: e.characters })
         }
         break
       }
@@ -92,7 +150,7 @@ export default function App() {
         break
       case "error": showToast("❌ " + e.message); setConverting(false); break
     }
-  }, [activeModelIdx])
+  }, [])
 
   const handleConvert = () => {
     setConverting(true); setAllResults([]); setScriptResult({}); setStrategyReport(""); setCompareResults([])
@@ -107,20 +165,44 @@ export default function App() {
 
   const handleRevise = async () => {
     if (!revFeedback) return showToast("请输入修改意见")
-    const r = await api.reviseScript({ ...apiParams(), chapter_text: chapterMap[revChapter] || novelText, existing_yaml: "", feedback: revFeedback })
-    if (r.success) {
-      showToast("✅ 已更新")
-      const other = (scriptResult.scenes || []).filter(s => s.chapter !== revChapter)
-      const merged = [...other, ...(r.result.scenes || [])].sort((a: any, b: any) => a.scene_id - b.scene_id)
-      merged.forEach((s: any, i: number) => { s.scene_id = i + 1 })
-      setScriptResult({ ...scriptResult, scenes: merged })
-    } else showToast(r.error)
+    if (!revChapter) return showToast("请选择目标章节")
+    const chapterScenes = (scriptResult.scenes || []).filter(s => s.chapter === revChapter)
+    if (!chapterScenes.length) return showToast("该章节暂无剧本数据，请先完成转换")
+    const chapterText = chapterMap[revChapter]
+    if (!chapterText) return showToast("未找到该章节原文，请重新预览章节后再修改")
+    const existingYaml = yamlDump({ scenes: chapterScenes })
+    setConverting(true)
+    try {
+      const r = await api.reviseScript({ ...apiParams(), chapter_text: chapterText, existing_yaml: existingYaml, feedback: revFeedback })
+      if (r.success) {
+        showToast("✅ 修改成功")
+        const other = (scriptResult.scenes || []).filter(s => s.chapter !== revChapter)
+        const merged = [...other, ...(r.result?.scenes || [])].sort((a: any, b: any) => a.scene_id - b.scene_id)
+        merged.forEach((s: any, i: number) => { s.scene_id = i + 1 })
+        setScriptResult({ ...scriptResult, scenes: merged })
+      } else {
+        showToast("❌ " + (r.error || r.message || "修改失败，请重试"))
+      }
+    } catch (e: any) { showToast("❌ 修改异常: " + (e.message || e)) }
+    finally { setConverting(false) }
   }
 
-  const viewModel = (idx: number) => {
-    setActiveModelIdx(idx)
-    const r = allResults[idx]
-    if (r) setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any })
+  const viewModel = (idxOrLabel: any) => {
+    if (typeof idxOrLabel === "number") {
+      setActiveModelIdx(idxOrLabel)
+      const r = allResults[idxOrLabel]
+      if (r) setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any })
+    } else if (typeof idxOrLabel === "string") {
+      const r = allResults.find((x: any) => x && x.label === idxOrLabel)
+      if (r) {
+        setActiveModelIdx(allResults.indexOf(r))
+        setScriptResult({ scenes: r.scenes || [], characters: r.characters || [], episodes: r.episodes || [], runtime: r.runtime as any || {} })
+        setTab("visual")
+        showToast("📄 已切换至 " + idxOrLabel)
+      } else {
+        showToast("⚠️ 数据未就绪，请等待所有模型完成")
+      }
+    }
   }
 
   const nav = (t: Tab, icon: string, label: string) => (
@@ -144,19 +226,39 @@ export default function App() {
         </nav>
         <div className="text-[10px] text-gray-400 px-3 pt-4 border-t border-gray-100">Script Engine v3</div>
       </aside>
+      {toast && <div className="fixed top-4 right-4 bg-black text-white px-6 py-3 rounded-full text-sm font-medium z-[9999] shadow-2xl animate-pulse">{toast}</div>}
       <main className="flex-1 overflow-y-auto p-8">
-        {toast && <div className="fixed top-4 right-4 bg-gray-900 text-white px-5 py-2.5 rounded-full text-sm z-50 shadow-lg">{toast}</div>}
+        {(scriptResult.scenes?.length ?? 0) > 0 && (
+          <div className="flex items-center gap-2 mb-5 flex-wrap">
+            <span className="text-xs text-gray-400 mr-2">下载：</span>
+            <button onClick={downloadWord} className="px-3 py-1 text-xs bg-black text-white rounded-full hover:bg-gray-800">Word</button>
+            <button onClick={() => download(yamlDump(scriptResult), "script.yaml")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">YAML</button>
+            <button onClick={() => download(JSON.stringify(scriptResult.scenes, null, 2), "scenes.json")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">JSON</button>
+            {strategyReport && <button onClick={() => download(strategyReport, "strategy.md")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">策略 .md</button>}
+            {(scriptResult.characters?.length ?? 0) > 0 && <button onClick={downloadCharactersWord} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">角色 Word</button>}
+            {(scriptResult.episodes?.length ?? 0) > 0 && <button onClick={downloadEpisodesWord} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">分集 Word</button>}
+          </div>
+        )}
         {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC }} />}
         {tab === "input" && <InputPanel {...{ novelText, setNovelText, handleFile, handlePreview }} />}
-        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText }} />}
+        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText, apiKey, provider, model, customUrl, setRevChapter }} />}
         {tab === "strategy" && <StrategyView report={strategyReport} />}
         {tab === "visual" && <VisualView result={scriptResult} />}
-        {tab === "characters" && <CharactersView characters={scriptResult.characters || []} />}
-        {tab === "episodes" && <EpisodesView episodes={scriptResult.episodes || []} epMinutes={epMinutes} />}
-        {tab === "compare" && <CompareView results={compareResults} allResults={allResults} viewModel={viewModel} />}
+        {tab === "characters" && <CharactersView characters={scriptResult.characters||[]} />}
+        {tab === "episodes" && <EpisodesView episodes={scriptResult.episodes||[]} epMinutes={epMinutes} />}
+        {tab === "compare" && <CompareView results={compareResults} viewModel={viewModel} />}
         {tab === "revise" && <RevisePanel {...{ scriptResult, chapterMap, revChapter, setRevChapter, revFeedback, setRevFeedback, handleRevise }} />}
         {tab === "yaml" && <YamlView result={scriptResult} runtime={scriptResult.runtime} sceneCount={scriptResult.scenes?.length || 0} charCount={scriptResult.characters?.length || 0} epCount={scriptResult.episodes?.length || 0} />}
       </main>
     </div>
   )
+}
+
+function yamlDump(o: any, d = 0): string {
+  const p = "  ".repeat(d)
+  if (o === null || o === undefined) return "null"
+  if (typeof o === "string") return (o.includes(":") || o.includes("#") || o.includes("'")) ? `"${o}"` : o
+  if (typeof o === "number" || typeof o === "boolean") return String(o)
+  if (Array.isArray(o)) { if (o.length === 0) return "[]"; let s = ""; for (const i of o) { if (typeof i === "object" && i !== null) { s += `${p}- `; const n = yamlDump(i, d + 1).trimStart(); s += n.startsWith("- ") ? `\n${n}` : `${n}\n` } else s += `${p}- ${yamlDump(i)}\n` } return s }
+  let s = ""; for (const [k, v] of Object.entries(o)) { if (v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0)) s += `${p}${k}: []\n`; else if (Array.isArray(v) && v.length > 0 && typeof v[0] !== "object") s += `${p}${k}: [${v.map((x: any) => yamlDump(x)).join(", ")}]\n`; else if (typeof v === "object" && !Array.isArray(v)) s += `${p}${k}:\n${yamlDump(v, d + 1)}`; else if (Array.isArray(v)) s += `${p}${k}:\n${yamlDump(v, d + 1)}`; else s += `${p}${k}: ${yamlDump(v)}\n` } return s
 }
