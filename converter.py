@@ -43,21 +43,12 @@ def _convert_single_chapter(
         chunk_scenes = _parse_llm_yaml(response_text)
         if not chunk_scenes:
             chunk_scenes = _parse_llm_yaml_fallback(response_text)
-        # 为每个场景打上章节标签
         for scene in chunk_scenes:
             scene["chapter"] = chapter_title
         chapter_scenes.extend(chunk_scenes)
 
-    # 兜底：如果 LLM 完全没输出，至少生成一个占位场景
     if not chapter_scenes:
-        chapter_scenes = [{
-            "chapter": chapter_title,
-            "location": "未知",
-            "characters_present": [],
-            "summary": f"{chapter_title}（解析失败，请检查该章内容）",
-            "dialogues": [],
-            "scene_notes": "LLM 未返回有效场景，可能原因：1) 原文过短 2) 格式异常 3) API 返回被截断"
-        }]
+        chapter_scenes = [{"chapter": chapter_title, "location": "未知", "characters_present": [], "summary": chapter_title, "dialogues": [], "scene_notes": "解析失败，请重试或切换模型"}]
 
     return chapter_title, chapter_scenes
 
@@ -235,63 +226,40 @@ def revise_script(
     return {"scenes": scenes}
 
 
-# ============================================================
-# YAML 解析（两层容错）
-# ============================================================
-
 def _parse_llm_yaml(text: str) -> list:
-    """第一层：标准 YAML 解析（改进版，多策略提取）"""
+    """从 LLM 返回文本中提取并解析 YAML"""
     if not text or not text.strip():
         return []
 
     text = text.strip()
 
-    # 1. 提取 markdown 代码块（支持多种格式）
-    for pat in [r'```(?:yaml|yml)\s*\n(.*?)```', r'```\s*\n(.*?)```']:
-        matches = re.findall(pat, text, re.DOTALL)
-        if matches:
-            text = "\n".join(m.strip() for m in matches if m.strip())
-            break
+    # 提取 markdown 代码块
+    yaml_pattern = r'```(?:yaml|yml)?\s*\n(.*?)```'
+    matches = re.findall(yaml_pattern, text, re.DOTALL)
+    if matches:
+        text = matches[0].strip()
 
-    # 2. 去掉 YAML 文档分隔符
-    text = re.sub(r'^---\s*$', '', text, flags=re.MULTILINE)
+    # 定位 scenes:
+    if not text.startswith("scenes:"):
+        scenes_pos = text.find("\nscenes:")
+        if scenes_pos == -1:
+            scenes_pos = text.find("scenes:")
+        if scenes_pos > 0:
+            text = text[scenes_pos:]
 
-    # 3. 定位 scenes 起始
-    if not text.strip().startswith("scenes:"):
-        for marker in ["\nscenes:", "scenes:"]:
-            pos = text.find(marker)
-            if pos >= 0:
-                text = text[pos:]
-                break
-
-    # 4. 标准 YAML 解析
     try:
         result = yaml.safe_load(text)
         if isinstance(result, dict) and "scenes" in result:
             return result["scenes"]
         elif isinstance(result, list):
             return result
+        else:
+            return []
     except yaml.YAMLError:
-        pass
-
-    # 5. 手动按 scene_id 分块逐个解析
-    blocks = re.split(r'\n\s*-\s+scene_id:', text)
-    scenes = []
-    for block in blocks:
-        if not block.strip(): continue
-        try:
-            r = yaml.safe_load("scene_id:" + block)
-            if isinstance(r, dict): scenes.append(r)
-        except yaml.YAMLError:
-            # 降级：尝试把整个 block 当做一个 scene 的 summary
-            lines = block.strip().split("\n")
-            summary = lines[0].strip() if lines else block.strip()[:50]
-            scenes.append({"location": "未知", "summary": summary, "characters_present": [], "dialogues": [], "scene_notes": "自动提取"})
-    return scenes
+        return []
 
 
 def _parse_llm_yaml_fallback(text: str) -> list:
-    """第二层：修复常见错误后重试"""
     text = _fix_common_yaml_errors(text)
     try:
         result = yaml.safe_load(text)
