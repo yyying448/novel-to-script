@@ -549,27 +549,26 @@ function handleSSE(event) {
             break;
         case 'model_done':
             if (event.label) markModelDone(event);
-            // 立刻加入模型选择器
             if (!state.allResults) state.allResults = [];
             const doneIdx = event.idx ?? state.allResults.length;
-            state.allResults[doneIdx] = {
-                label: event.label,
-                scenes: event.scenes || [],
-                characters: event.characters || [],
-                episodes: event.episodes || [],
-                runtime: event.runtime || {},
-                character_count: event.character_count || 0,
-                episode_count: event.episode_count || 0,
-            };
+            // 合并数据（保留 partial 已有 + 追加 episodes/runtime）
+            state.allResults[doneIdx] = Object.assign(
+                state.allResults[doneIdx] || {},
+                {
+                    label: event.label,
+                    scenes: event.scenes || state.allResults[doneIdx]?.scenes || [],
+                    characters: event.characters || state.allResults[doneIdx]?.characters || [],
+                    episodes: event.episodes || [],
+                    runtime: event.runtime || {},
+                    character_count: event.character_count || 0,
+                    episode_count: event.episode_count || 0,
+                }
+            );
             state.compareScenes = state.compareScenes || {};
             state.compareScenes[event.label] = event.scenes || [];
-            // 刷新选择器
             refreshModelSelector();
-            // 如果是第一个完成的模型，自动展示
-            if (state.allResults.filter(Boolean).length === 1 && event.scenes && event.scenes.length) {
-                state.scriptResult = { scenes: event.scenes, characters: event.characters, episodes: event.episodes, runtime: event.runtime };
-                showResult(state.scriptResult, event.scenes.length);
-                document.getElementById('step-result').classList.remove('hidden');
+            if (event.error) {
+                updateProgressSummary(`⚠️ ${event.label}: ${event.error}`);
             }
             break;
         case 'done':
@@ -590,16 +589,28 @@ function handleSSE(event) {
             document.getElementById('step-result').classList.remove('hidden');
             break;
         case 'partial':
-            // 中间结果（仅主模型实时展示剧本预览）
-            if (!event.label || event.label === '模型 A') {
-                state.scriptResult = { scenes: event.scenes, characters: event.characters };
-                showResult(state.scriptResult, event.scenes.length);
-                if (event.characters && event.characters.length) {
-                    renderCharacters(event.characters);
-                }
+            // 实时存储每个模型的中间结果
+            if (!state.allResults) state.allResults = [];
+            const modelIdx = event.label === '模型 B' ? 1 : event.label === '模型 C' ? 2 : 0;
+            if (!state.allResults[modelIdx]) {
+                state.allResults[modelIdx] = { label: event.label || '模型 A', scenes: [], characters: [] };
+            }
+            state.allResults[modelIdx].scenes = event.scenes || [];
+            state.allResults[modelIdx].characters = event.characters || [];
+            state.allResults[modelIdx].character_count = (event.characters || []).length;
+            state.compareScenes = state.compareScenes || {};
+            state.compareScenes[event.label || '模型 A'] = event.scenes || [];
+            // 刷新选择器
+            refreshModelSelector();
+            // 当前查看的模型收到更新时实时刷新
+            if (state.activeModelIdx === modelIdx || (state.activeModelIdx === undefined && modelIdx === 0)) {
+                state.activeModelIdx = modelIdx;
+                state.scriptResult = { scenes: event.scenes || [], characters: event.characters || [] };
+                showResult(state.scriptResult, (event.scenes||[]).length);
+                if (event.characters && event.characters.length) renderCharacters(event.characters);
                 document.getElementById('step-result').classList.remove('hidden');
             }
-            updateProgressSummary(`📝 ${event.label||'模型 A'} 已完成 ${event.completed}/${event.total} 章`);
+            updateProgressSummary(`📝 ${event.label||'模型 A'} 已完成 ${event.completed}/${event.total} 章（下拉可切换查看）`);
             break;
         case 'compare':
             // 多模型对比结果
