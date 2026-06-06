@@ -140,11 +140,15 @@ async def preview_chapters(req: ConvertRequest):
 
         chapters = split_chapters(req.text)
         summary = get_chapter_summary(chapters)
+        ch_map = {}
+        for ch in chapters:
+            ch_map[ch["title"]] = ch["content"][:8000]
 
         return JSONResponse({
             "success": True,
             "chapter_count": len(chapters),
-            "chapters": summary
+            "chapters": summary,
+            "chapter_map": ch_map
         })
 
     except Exception as e:
