@@ -270,11 +270,27 @@ async def convert(req: ConvertRequest):
                 result["episode_count"] = 0
 
             all_results[idx] = {"label": label, "result": result}
-            _put_sync(queue, {"type": "model_done", "label": label, "idx": idx}, event_loop)
+            # 推送完整的单模型结果（含角色/分集/时长）
+            _put_sync(queue, {
+                "type": "model_done",
+                "label": label,
+                "idx": idx,
+                "scenes": result.get("scenes", []),
+                "characters": result.get("characters", []),
+                "character_count": result.get("character_count", 0),
+                "episodes": result.get("episodes", []),
+                "episode_count": result.get("episode_count", 0),
+                "runtime": result.get("runtime", {}),
+            }, event_loop)
 
         except Exception as e:
-            all_results[idx] = {"label": label, "error": str(e)}
-            _put_sync(queue, {"type": "model_done", "label": label, "idx": idx, "error": str(e)}, event_loop)
+            err_msg = str(e)
+            if "429" in err_msg:
+                err_msg = f"{label} 频率限制（429），请稍后重试或更换 API Key"
+            elif "401" in err_msg or "403" in err_msg:
+                err_msg = f"{label} Key 无效或权限不足"
+            all_results[idx] = {"label": label, "error": err_msg}
+            _put_sync(queue, {"type": "model_done", "label": label, "idx": idx, "error": err_msg}, event_loop)
 
     # 并行启动所有模型
     threads = []
@@ -322,8 +338,16 @@ async def convert(req: ConvertRequest):
             "character_count": main_result.get("character_count", 0),
             "runtime": main_result.get("runtime", {}),
             "episode_count": main_result.get("episode_count", 0),
-            "all_results": [{"label": r["label"], "scenes": r.get("result", {}).get("scenes", []) if "result" in r else [],
-                              "error": r.get("error", "")} for r in all_results if r]
+            "all_results": [{
+                "label": r["label"],
+                "scenes": r.get("result", {}).get("scenes", []) if "result" in r else [],
+                "characters": r.get("result", {}).get("characters", []) if "result" in r else [],
+                "episodes": r.get("result", {}).get("episodes", []) if "result" in r else [],
+                "runtime": r.get("result", {}).get("runtime", {}) if "result" in r else {},
+                "character_count": r.get("result", {}).get("character_count", 0) if "result" in r else 0,
+                "episode_count": r.get("result", {}).get("episode_count", 0) if "result" in r else 0,
+                "error": r.get("error", "")
+            } for r in all_results if r]
         }, event_loop)
 
     Thread(target=finalize, daemon=True).start()
