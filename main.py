@@ -34,10 +34,11 @@ class ConvertRequest(BaseModel):
     base_url: Optional[str] = None
     model: Optional[str] = None
     episode_minutes: float = 0
-    # 对比模式：最多 2 个额外模型
-    compare_keys: str = ""       # JSON 数组：["key2","key3"]
-    compare_models: str = ""     # JSON 数组：["model2","model3"]
-    compare_providers: str = ""  # JSON 数组：["provider2","provider3"]
+    selected_chapters: str = ""   # JSON 数组，空=全选
+    requirement: str = ""         # 转换要求，追加到 prompt
+    compare_keys: str = ""
+    compare_models: str = ""
+    compare_providers: str = ""
 
 
 class ReviseRequest(BaseModel):
@@ -233,9 +234,23 @@ async def convert(req: ConvertRequest):
                 strategy_report = generate_adaptation_strategy(req.text, summary, client, model=model)
                 _put_sync(queue, {"type": "strategy", "report": strategy_report}, event_loop)
             else:
-                chapters = None
-                ch_map = None
+                chapters = []
+                ch_map = {}
                 strategy_report = None
+
+            # 过滤选中章节（对所有模型生效）
+            req_text = req.text
+            if req.selected_chapters:
+                try:
+                    selected = _json.loads(req.selected_chapters) if isinstance(req.selected_chapters, str) else req.selected_chapters
+                    if selected and chapters:
+                        filtered_text = ""
+                        for ch in chapters:
+                            if ch["title"] in selected:
+                                filtered_text += ch["title"] + "\n" + ch["content"] + "\n\n"
+                        req_text = filtered_text if filtered_text else req.text
+                except Exception:
+                    pass
 
             from converter import convert_novel_to_script
 
@@ -255,14 +270,15 @@ async def convert(req: ConvertRequest):
                 }, event_loop)
 
             result = convert_novel_to_script(
-                req.text, client,
+                req_text, client,
                 progress_callback=on_progress,
                 partial_callback=on_partial,
                 model=model,
+                requirement=req.requirement,
             )
 
             from adaptation_agent import analyze_all_scenes, estimate_total_runtime, split_into_episodes, annotate_conflicts
-            result["scenes"] = analyze_all_scenes(result.get("scenes", []))
+            result["scenes"] = analyze_all_scenes(result.get("scenes") or [])
             result["scenes"] = annotate_conflicts(result["scenes"])
             runtime = estimate_total_runtime(result["scenes"])
             result["runtime"] = {"min": runtime[0], "likely": runtime[1], "max": runtime[2]}
@@ -280,12 +296,12 @@ async def convert(req: ConvertRequest):
                 "type": "model_done",
                 "label": label,
                 "idx": idx,
-                "scenes": result.get("scenes", []),
-                "characters": result.get("characters", []),
-                "character_count": result.get("character_count", 0),
-                "episodes": result.get("episodes", []),
-                "episode_count": result.get("episode_count", 0),
-                "runtime": result.get("runtime", {}),
+                "scenes": result.get("scenes") or [],
+                "characters": result.get("characters") or [],
+                "character_count": result.get("character_count") or 0,
+                "episodes": result.get("episodes") or [],
+                "episode_count": result.get("episode_count") or 0,
+                "runtime": result.get("runtime") or {},
             }, event_loop)
 
         except Exception as e:
@@ -312,7 +328,7 @@ async def convert(req: ConvertRequest):
         judge_input = []
         for r in all_results:
             if r and "result" in r:
-                judge_input.append({"label": r["label"], "scenes": r["result"].get("scenes", [])})
+                judge_input.append({"label": r["label"], "scenes": r["result"].get("scenes") or []})
             elif r:
                 judge_input.append({"label": r["label"], "scenes": []})
         if len(judge_input) >= 2:
@@ -339,19 +355,19 @@ async def convert(req: ConvertRequest):
         _put_sync(queue, {
             "type": "done",
             "result": main_result,
-            "scene_count": len(main_result.get("scenes", [])),
-            "character_count": main_result.get("character_count", 0),
-            "runtime": main_result.get("runtime", {}),
+            "scene_count": len(main_result.get("scenes") or []),
+            "character_count": main_result.get("character_count") or 0,
+            "runtime": main_result.get("runtime") or {},
             "episode_count": main_result.get("episode_count", 0),
             "all_results": [{
                 "label": r["label"],
-                "scenes": r.get("result", {}).get("scenes", []) if "result" in r else [],
-                "characters": r.get("result", {}).get("characters", []) if "result" in r else [],
-                "episodes": r.get("result", {}).get("episodes", []) if "result" in r else [],
-                "runtime": r.get("result", {}).get("runtime", {}) if "result" in r else {},
-                "character_count": r.get("result", {}).get("character_count", 0) if "result" in r else 0,
-                "episode_count": r.get("result", {}).get("episode_count", 0) if "result" in r else 0,
-                "error": r.get("error", "")
+                "scenes": (r.get("result", {}).get("scenes") or []) if "result" in r else [],
+                "characters": (r.get("result", {}).get("characters") or []) if "result" in r else [],
+                "episodes": (r.get("result", {}).get("episodes") or []) if "result" in r else [],
+                "runtime": (r.get("result", {}).get("runtime") or {}) if "result" in r else {},
+                "character_count": (r.get("result", {}).get("character_count") or 0) if "result" in r else 0,
+                "episode_count": (r.get("result", {}).get("episode_count") or 0) if "result" in r else 0,
+                "error": r.get("error") or ""
             } for r in all_results if r]
         }, event_loop)
 
@@ -468,7 +484,10 @@ def _run_comparison(req: ConvertRequest, main_result: dict, queue: asyncio.Queue
             provider = providers[i] if i < len(providers) else req.provider
             model = models[i] if i < len(models) else get_default_model(provider)
             client = create_client(key, provider=provider)
-            result = convert_novel_to_script(req.text, client, model=model)
+            try:
+                result = convert_novel_to_script(req.text, client, model=model)
+            except Exception as e2:
+                result = {"scenes": [], "characters": [], "error": str(e2)}
             all_results.append({"label": label, "scenes": result.get("scenes", [])})
         except Exception as e:
             all_results.append({"label": label, "scenes": [], "error": str(e)})
@@ -479,14 +498,17 @@ def _run_comparison(req: ConvertRequest, main_result: dict, queue: asyncio.Queue
         # 每个结果只传前 3 个场景预览，完整数据存 state
         results_preview = []
         for r in all_results:
-            preview = r.get("scenes", [])[:3]
+            if not r: continue
+            scenes = (r.get("result", {}) or {}).get("scenes", []) if "result" in r else r.get("scenes", [])
+            if not scenes: scenes = []
+            preview = scenes[:3]
             results_preview.append({
                 "label": r["label"],
-                "scene_count": len(r.get("scenes", [])),
+                "scene_count": len(scenes),
                 "score": scores.get(r["label"], "N/A"),
                 "error": r.get("error", ""),
                 "preview": preview,
-                "all_scenes": r.get("scenes", [])  # 完整数据
+                "all_scenes": scenes
             })
         _put_sync(queue, {
             "type": "compare",
@@ -502,14 +524,15 @@ def _judge_results(results: list, req: ConvertRequest) -> dict:
     msg += "1) 对话自然度 2) 场景完整性 3) 叙事流畅度 4) 角色一致性\n\n"
 
     for r in results:
-        scenes = r.get("scenes", [])[:5]
+        sc = r.get("scenes") or []
+        scenes = sc[:5]
         preview = "\n".join([
             f"  场景{s.get('scene_id','?')}: {s.get('summary','?')} [{s.get('location','?')}]"
             for s in scenes
         ])
-        msg += f"=== {r['label']}（{len(r.get('scenes',[]))} 场）===\n{preview}\n\n"
+        msg += f"=== {r['label']}（{len(sc)} 场）===\n{preview}\n\n"
 
-    msg += "请输出 JSON，格式：{\"模型 A\": {\"总分\": 35, \"评语\": \"...\"}, ...}"
+    msg += "请输出 JSON。注意：必须给每个模型不同的分数以体现差异，不要打平。格式：{\"模型 A\": {\"总分\": 35, \"评语\": \"优势是...\"}, ...}"
 
     try:
         client = create_client(req.api_key, provider=req.provider, base_url=req.base_url)

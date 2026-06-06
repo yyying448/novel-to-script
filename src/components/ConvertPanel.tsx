@@ -7,6 +7,8 @@ export default function ConvertPanel(p: any) {
   const [aiResult, setAiResult] = useState("")
   const [aiLoading, setAiLoading] = useState(false)
   const [selRange, setSelRange] = useState<{start:number,end:number} | null>(null)
+  const [checkedChapters, setCheckedChapters] = useState<Set<string>>(new Set())
+  const [convertRequirement, setConvertRequirement] = useState("")
   const colors = ["bg-black","bg-gray-500","bg-gray-300"]
 
   const openEdit = (ch: Chapter) => {
@@ -46,12 +48,18 @@ export default function ConvertPanel(p: any) {
 
   const applyAiResult = () => {
     if (!aiResult) return
+    let newText: string
     if (selRange) {
       const before = editText.slice(0, selRange.start)
       const after = editText.slice(selRange.end)
-      setEditText(before + aiResult + after)
+      newText = before + aiResult + after
     } else {
-      setEditText(aiResult)
+      newText = aiResult
+    }
+    setEditText(newText)
+    // 自动保存到 editedChapterMap
+    if (editing && p.setEditedChapterMap) {
+      p.setEditedChapterMap((prev: any) => ({ ...prev, [editing]: newText }))
     }
     setAiResult("")
     setSelRange(null)
@@ -64,19 +72,34 @@ export default function ConvertPanel(p: any) {
         <div className="mb-5">
           <p className="text-sm text-gray-500 mb-3 font-medium">识别到 {p.chapters.length} 个章节</p>
           <div className="flex flex-wrap gap-2">
-            {p.chapters.map((ch: Chapter, i: number) => (
-              <span key={i} onClick={() => openEdit(ch)}
-                className="px-3 py-1.5 bg-gray-100 border border-gray-200 rounded-full text-xs text-gray-700 cursor-pointer hover:bg-gray-200 hover:border-gray-400 transition-colors">
-                {ch.title}<span className="text-gray-400 ml-1">{ch.char_count}字</span>
-              </span>
-            ))}
+            {p.chapters.map((ch: Chapter, i: number) => {
+              const isChecked = checkedChapters.size === 0 || checkedChapters.has(ch.title)
+              return (
+                <label key={i} className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 border border-gray-200 rounded-full text-xs cursor-pointer hover:bg-gray-200 transition-colors">
+                  <input type="checkbox" checked={isChecked} onChange={() => {
+                    setCheckedChapters(prev => {
+                      const next = new Set(prev)
+                      if (next.has(ch.title)) next.delete(ch.title)
+                      else next.add(ch.title)
+                      return next
+                    })
+                  }} className="w-3 h-3 accent-black" />
+                  <span onClick={() => openEdit(ch)}>{ch.title}<span className="text-gray-400 ml-1">{ch.char_count}字</span></span>
+                </label>
+              )
+            })}
+          </div>
+          <div className="mt-3">
+            <input type="text" value={convertRequirement} onChange={e => setConvertRequirement(e.target.value)}
+              placeholder="转换要求(可选): 如 加强对话冲突感 或 保持简洁风格"
+              className="w-full px-3 py-1.5 bg-white border border-gray-300 rounded-full text-xs text-black outline-none focus:border-black/40" />
           </div>
           <div className="flex items-center gap-3 mt-5">
             <label className="text-sm text-gray-500 font-medium">单集时长</label>
             <input type="number" value={p.epMinutes} onChange={e=>p.setEpMinutes(Number(e.target.value)||0)} min={0} max={180}
               className="w-20 px-3 py-1.5 bg-white border border-gray-300 rounded-full text-sm text-black text-center outline-none focus:border-black/40"/>
             <span className="text-xs text-gray-400">分钟（0=不分集）</span>
-            <button onClick={p.handleConvert} disabled={p.converting}
+            <button onClick={() => p.handleConvert(checkedChapters, convertRequirement)} disabled={p.converting}
               className="ml-auto px-6 py-2.5 bg-black text-white rounded-full text-sm font-semibold hover:bg-gray-800 disabled:opacity-30 transition-all">{p.converting?"转换中...":"开始转换"}</button>
           </div>
         </div>
