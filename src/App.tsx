@@ -160,7 +160,14 @@ export default function App() {
         text = text.replace(oldContent, content)
       }
     }
-    setConverting(true); setAllResults([]); setScriptResult({}); setStrategyReport(""); setCompareResults([])
+    setConverting(true); setScriptResult({}); setStrategyReport(""); setCompareResults([])
+    // 根据对比模式预设模型列表
+    const hasB = !!(document.getElementById('compare-key-b') as HTMLInputElement)?.value?.trim()
+    const hasC = !!(document.getElementById('compare-key-c') as HTMLInputElement)?.value?.trim()
+    const initResults: any[] = [{ label: "模型 A", scenes: [], characters: [], episodes: [], runtime: {}, character_count: 0, episode_count: 0 }]
+    if (hasB) initResults.push({ label: "模型 B", scenes: [], characters: [], episodes: [], runtime: {}, character_count: 0, episode_count: 0 })
+    if (hasC) initResults.push({ label: "模型 C", scenes: [], characters: [], episodes: [], runtime: {}, character_count: 0, episode_count: 0 })
+    setAllResults(initResults)
     setLanes([{ label: "模型 A", current: 0, total: chapters.length || 1, status: "等待中...", percent: 0, done: false }])
     const selected = checkedChapters && checkedChapters.size > 0 ? [...checkedChapters] : []
     api.convertNovel({
