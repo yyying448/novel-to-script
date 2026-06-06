@@ -1,0 +1,162 @@
+import { useState, useCallback, useEffect } from "react"
+import type { Provider, Chapter, SSEEvent, ScriptResult, ModelResult } from "./types"
+import * as api from "./lib/api"
+import ConfigPanel from "./components/ConfigPanel"
+import InputPanel from "./components/InputPanel"
+import ConvertPanel from "./components/ConvertPanel"
+import { StrategyView, VisualView, CharactersView, EpisodesView, CompareView, RevisePanel, YamlView } from "./components/Views"
+
+type Tab = "config" | "input" | "convert" | "strategy" | "visual" | "characters" | "episodes" | "compare" | "revise" | "yaml"
+
+export default function App() {
+  const [tab, setTab] = useState<Tab>("config")
+  const [providers, setProviders] = useState<Provider[]>([])
+  const [apiKey, setApiKey] = useState("")
+  const [provider, setProvider] = useState("deepseek")
+  const [model, setModel] = useState("")
+  const [customUrl, setCustomUrl] = useState("")
+  const [novelText, setNovelText] = useState("")
+  const [chapters, setChapters] = useState<Chapter[]>([])
+  const [chapterMap, setChapterMap] = useState<Record<string, string>>({})
+  const [epMinutes, setEpMinutes] = useState(0)
+  const [converting, setConverting] = useState(false)
+  const [lanes, setLanes] = useState<any[]>([])
+  const [scriptResult, setScriptResult] = useState<ScriptResult>({})
+  const [allResults, setAllResults] = useState<ModelResult[]>([])
+  const [activeModelIdx, setActiveModelIdx] = useState(0)
+  const [strategyReport, setStrategyReport] = useState("")
+  const [compareResults, setCompareResults] = useState<any[]>([])
+  const [toast, setToast] = useState("")
+  const [cmpKeyB, setCmpKeyB] = useState(""); const [cmpKeyC, setCmpKeyC] = useState("")
+  const [cmpModelB, setCmpModelB] = useState(""); const [cmpModelC, setCmpModelC] = useState("")
+  const [cmpProvB, setCmpProvB] = useState("openai"); const [cmpProvC, setCmpProvC] = useState("openai")
+  const [revChapter, setRevChapter] = useState("")
+  const [revFeedback, setRevFeedback] = useState("")
+
+  useEffect(() => { api.fetchProviders().then(setProviders) }, [])
+  useEffect(() => { const t = setTimeout(() => toast && setToast(""), 3000); return () => clearTimeout(t) }, [toast])
+
+  const apiParams = (extra: any = {}) => ({ text: novelText, api_key: apiKey, provider, model: model || undefined, base_url: customUrl || undefined, ...extra })
+  const showToast = (m: string) => setToast(m)
+
+  const handleSaveKey = async () => {
+    if (!apiKey) return showToast("请输入 API Key")
+    const r = await api.validateKey(apiKey, provider, customUrl)
+    showToast(r.success ? `✅ ${r.message}` : `❌ ${r.message}`)
+  }
+
+  const handleFile = async (e: any) => {
+    const files = e.target?.files || e.dataTransfer?.files
+    const f = files?.[0]; if (!f) return
+    const r = await api.parseFile(f)
+    if (r.success) { setNovelText(r.text); showToast(`✅ ${r.filename} ${r.char_count}字`) }
+    else showToast(r.error)
+  }
+
+  const handlePreview = async () => {
+    if (!novelText) return showToast("请先输入小说")
+    const r = await api.previewChapters(apiParams())
+    if (r.success) { setChapters(r.chapters); setChapterMap(r.chapter_map || {}); setTab("convert") }
+    else showToast(r.error)
+  }
+
+  const handleSSE = useCallback((e: SSEEvent) => {
+    switch (e.type) {
+      case "chapters": if (e.data) { setChapters(e.data); setChapterMap(e.chapter_map || {}) } break
+      case "strategy": if (e.report) { setStrategyReport(e.report); setTab("strategy") } break
+      case "progress": {
+        const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
+        setLanes(p => { const n = [...p]; if (!n[i]) n[i] = { label: e.label || "模型 A", current: 0, total: e.total || 1, status: "", percent: 0, done: false }; n[i] = { ...n[i], current: e.current || 0, total: e.total || 1, status: e.status || "", percent: e.percent || 0 }; return n })
+        break
+      }
+      case "partial": {
+        const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
+        if (e.scenes) {
+          setAllResults(p => { const n = [...p]; n[i] = { ...n[i], label: e.label || "模型 A", scenes: e.scenes || [], characters: e.characters || [], character_count: (e.characters || []).length, episodes: [], episode_count: 0, runtime: {} }; return n })
+          if (i === activeModelIdx || (i === 0 && activeModelIdx === 0)) setScriptResult({ scenes: e.scenes, characters: e.characters })
+        }
+        break
+      }
+      case "model_done":
+        setLanes(p => { const n = [...p]; const i = e.idx || 0; n[i] = { ...n[i], done: true, error: e.error }; return n })
+        if (e.scenes) {
+          setAllResults(p => { const n = [...p]; n[e.idx || 0] = { label: e.label || "", scenes: e.scenes || [], characters: e.characters || [], episodes: e.episodes || [], runtime: e.runtime || {}, character_count: e.character_count || 0, episode_count: e.episode_count || 0, error: e.error }; return n })
+        }
+        break
+      case "compare": if (e.results) setCompareResults(e.results); break
+      case "done":
+        if (e.result) setScriptResult(e.result)
+        if (e.all_results) setAllResults(e.all_results)
+        if (e.strategy_report) setStrategyReport(e.strategy_report)
+        setConverting(false)
+        break
+      case "error": showToast("❌ " + e.message); setConverting(false); break
+    }
+  }, [activeModelIdx])
+
+  const handleConvert = () => {
+    setConverting(true); setAllResults([]); setScriptResult({}); setStrategyReport(""); setCompareResults([])
+    setLanes([{ label: "模型 A", current: 0, total: chapters.length || 1, status: "等待中...", percent: 0, done: false }])
+    api.convertNovel({
+      ...apiParams(), episode_minutes: epMinutes,
+      compare_keys: JSON.stringify([cmpKeyB, cmpKeyC].filter(Boolean)),
+      compare_models: JSON.stringify([cmpModelB, cmpModelC].filter(Boolean)),
+      compare_providers: JSON.stringify([cmpProvB, cmpProvC].filter(Boolean)),
+    } as any, handleSSE, () => { setConverting(false); showToast("✅ 完成") }, (err) => { setConverting(false); showToast("❌ " + err) })
+  }
+
+  const handleRevise = async () => {
+    if (!revFeedback) return showToast("请输入修改意见")
+    const r = await api.reviseScript({ ...apiParams(), chapter_text: chapterMap[revChapter] || novelText, existing_yaml: "", feedback: revFeedback })
+    if (r.success) {
+      showToast("✅ 已更新")
+      const other = (scriptResult.scenes || []).filter(s => s.chapter !== revChapter)
+      const merged = [...other, ...(r.result.scenes || [])].sort((a: any, b: any) => a.scene_id - b.scene_id)
+      merged.forEach((s: any, i: number) => { s.scene_id = i + 1 })
+      setScriptResult({ ...scriptResult, scenes: merged })
+    } else showToast(r.error)
+  }
+
+  const viewModel = (idx: number) => {
+    setActiveModelIdx(idx)
+    const r = allResults[idx]
+    if (r) setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any })
+  }
+
+  const nav = (t: Tab, icon: string, label: string) => (
+    <button onClick={() => setTab(t)}
+      className={`w-full text-left px-5 py-3 text-sm flex items-center gap-3 rounded-full transition-all duration-200
+        ${tab === t
+          ? "bg-white text-black font-medium shadow-sm"
+          : "text-zinc-400 hover:text-white hover:bg-white/5"
+        }`}
+    >{icon} {label}</button>
+  )
+
+  return (
+    <div className="flex h-screen bg-black">
+      <aside className="w-60 flex-shrink-0 bg-[#050505] border-r border-zinc-800 flex flex-col p-4 overflow-y-auto">
+        <h1 className="text-base font-semibold text-white px-3 pb-6 pt-1 tracking-tight">Novel → Script</h1>
+        <nav className="flex flex-col gap-1.5 flex-1">
+          {nav("config", "⚙️", "配置")}{nav("input", "📁", "输入")}{nav("convert", "🚀", "转换")}
+          <div className="border-t border-zinc-800 my-3" />
+          {nav("strategy", "📋", "策略")}{nav("visual", "🎬", "剧本")}{nav("characters", "👥", "角色")}{nav("episodes", "📺", "分集")}{nav("compare", "🔬", "对比")}{nav("revise", "✏️", "修改")}{nav("yaml", "📄", "YAML")}
+        </nav>
+        <div className="text-[10px] text-zinc-600 px-3 pt-4 border-t border-zinc-800">Script Engine v3</div>
+      </aside>
+      <main className="flex-1 overflow-y-auto p-8">
+        {toast && <div className="fixed top-4 right-4 bg-zinc-800 text-white border border-zinc-700 px-4 py-2 rounded-full text-sm z-50 shadow-lg">{toast}</div>}
+        {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC }} />}
+        {tab === "input" && <InputPanel {...{ novelText, setNovelText, handleFile, handlePreview }} />}
+        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel }} />}
+        {tab === "strategy" && <StrategyView report={strategyReport} />}
+        {tab === "visual" && <VisualView result={scriptResult} />}
+        {tab === "characters" && <CharactersView characters={scriptResult.characters || []} />}
+        {tab === "episodes" && <EpisodesView episodes={scriptResult.episodes || []} epMinutes={epMinutes} />}
+        {tab === "compare" && <CompareView results={compareResults} allResults={allResults} viewModel={viewModel} />}
+        {tab === "revise" && <RevisePanel {...{ scriptResult, chapterMap, revChapter, setRevChapter, revFeedback, setRevFeedback, handleRevise }} />}
+        {tab === "yaml" && <YamlView result={scriptResult} runtime={scriptResult.runtime} sceneCount={scriptResult.scenes?.length || 0} charCount={scriptResult.characters?.length || 0} epCount={scriptResult.episodes?.length || 0} />}
+      </main>
+    </div>
+  )
+}
