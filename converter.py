@@ -19,7 +19,8 @@ PARTIAL_RESULT_INTERVAL = 3
 
 
 def _convert_single_chapter(
-    chapter: Dict[str, str], llm_client, character_profiles: str = ""
+    chapter: Dict[str, str], llm_client, character_profiles: str = "",
+    model: str = "deepseek-chat"
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
     转换单个章节，返回 (章节标题, 场景列表)
@@ -38,7 +39,7 @@ def _convert_single_chapter(
             character_profiles=character_profiles,
             chapter_text=chunk["content"]
         )
-        response_text = call_llm(llm_client, SYSTEM_PROMPT, prompt)
+        response_text = call_llm(llm_client, SYSTEM_PROMPT, prompt, model=model)
         chunk_scenes = _parse_llm_yaml(response_text)
         # 为每个场景打上章节标签
         for scene in chunk_scenes:
@@ -53,18 +54,10 @@ def convert_novel_to_script(
     llm_client,
     progress_callback: Optional[Callable] = None,
     partial_callback: Optional[Callable] = None,
+    model: str = "deepseek-chat",
 ) -> Dict[str, Any]:
     """
     主转换函数：将小说全文转换为剧本
-
-    Returns:
-        {
-            "scenes": [...],           # 所有场景（含 chapter 字段）
-            "chapter_map": {           # 章节标题 → 原文映射
-                "第1章": "原文内容...",
-                ...
-            }
-        }
     """
     chapters = split_chapters(novel_text)
     if not chapters:
@@ -98,7 +91,7 @@ def convert_novel_to_script(
             char_inject = char_manager.get_consistency_prompt(chapter["title"])
 
             future = executor.submit(
-                _convert_single_chapter, chapter, llm_client, char_inject
+                _convert_single_chapter, chapter, llm_client, char_inject, model
             )
             future_to_idx[future] = idx
 
@@ -137,6 +130,13 @@ def convert_novel_to_script(
     all_scenes = _assemble_scenes(chapter_results)
     characters_summary = char_manager.get_summary()
 
+    # 深度角色分析（性格/动机/外貌等）
+    try:
+        report = char_manager.deep_analyze(llm_client)
+        _apply_deep_analysis(characters_summary, report)
+    except Exception:
+        pass  # 分析失败不影响主流程
+
     return {
         "scenes": all_scenes,
         "chapter_map": chapter_map,
@@ -144,11 +144,29 @@ def convert_novel_to_script(
         "character_count": len(characters_summary)
     }
 
+def _apply_deep_analysis(characters: list, report: str):
+    """将 LLM 生成的角色报告回填到档案中"""
+    import re
+    for char in characters:
+        name = char.get("name", "")
+        # 在报告中查找该角色的分析段落
+        pattern = rf'###\s*{re.escape(name)}.*?\n(.*?)(?=###\s|\Z)'
+        match = re.search(pattern, report, re.DOTALL)
+        if match:
+            block = match.group(1)
+            # 提取各字段
+            for field, key in [("性格", "personality"), ("说话风格", "speech_style"),
+                               ("身份定位", "identity"), ("核心动机", "motivation"),
+                               ("外貌特征", "appearance")]:
+                m = re.search(rf'{field}[：:]\s*(.+)', block)
+                if m:
+                    char[key] = m.group(1).strip()
+
 
 def _assemble_scenes(
     chapter_results: List[Optional[Tuple[str, List[Dict]]]]
 ) -> List[Dict]:
-    """将各章结果按顺序组装，分配全局 scene_id"""
+    """Assemble chapter results in order, assign global scene IDs"""
     all_scenes = []
     scene_id_counter = 1
     for item in chapter_results:
@@ -165,13 +183,11 @@ def revise_script(
     chapter_text: str,
     existing_yaml: str,
     feedback: str,
-    llm_client
+    llm_client,
+    model: str = "deepseek-chat",
 ) -> Dict[str, Any]:
     """
     根据用户修改意见，二次生成剧本
-
-    注意：chapter_text 应为目标章节的原文（不是整本小说），
-    由前端从 chapter_map 中提取后传入。
     """
     from llm_client import call_llm
 
@@ -187,7 +203,7 @@ def revise_script(
         user_feedback=feedback
     )
 
-    response_text = call_llm(llm_client, SYSTEM_PROMPT, prompt)
+    response_text = call_llm(llm_client, SYSTEM_PROMPT, prompt, model=model)
 
     # 两阶段容错解析
     scenes = _parse_llm_yaml(response_text)

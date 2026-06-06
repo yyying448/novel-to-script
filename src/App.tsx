@@ -127,28 +127,28 @@ export default function App() {
     <button onClick={() => setTab(t)}
       className={`w-full text-left px-5 py-3 text-sm flex items-center gap-3 rounded-full transition-all duration-200
         ${tab === t
-          ? "bg-white text-black font-medium shadow-sm"
-          : "text-zinc-400 hover:text-white hover:bg-white/5"
+          ? "bg-black text-white font-semibold shadow-sm"
+          : "text-gray-400 hover:text-black hover:bg-gray-100"
         }`}
     >{icon} {label}</button>
   )
 
   return (
-    <div className="flex h-screen bg-black">
-      <aside className="w-60 flex-shrink-0 bg-[#050505] border-r border-zinc-800 flex flex-col p-4 overflow-y-auto">
-        <h1 className="text-base font-semibold text-white px-3 pb-6 pt-1 tracking-tight">Novel → Script</h1>
+    <div className="flex h-screen bg-[#fafafa]">
+      <aside className="w-60 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col p-4 overflow-y-auto">
+        <h1 className="text-base font-bold text-black px-3 pb-6 pt-1 tracking-tight">Novel → Script</h1>
         <nav className="flex flex-col gap-1.5 flex-1">
           {nav("config", "⚙️", "配置")}{nav("input", "📁", "输入")}{nav("convert", "🚀", "转换")}
-          <div className="border-t border-zinc-800 my-3" />
+          <div className="border-t border-gray-200 my-3" />
           {nav("strategy", "📋", "策略")}{nav("visual", "🎬", "剧本")}{nav("characters", "👥", "角色")}{nav("episodes", "📺", "分集")}{nav("compare", "🔬", "对比")}{nav("revise", "✏️", "修改")}{nav("yaml", "📄", "YAML")}
         </nav>
-        <div className="text-[10px] text-zinc-600 px-3 pt-4 border-t border-zinc-800">Script Engine v3</div>
+        <div className="text-[10px] text-gray-400 px-3 pt-4 border-t border-gray-100">Script Engine v3</div>
       </aside>
       <main className="flex-1 overflow-y-auto p-8">
-        {toast && <div className="fixed top-4 right-4 bg-zinc-800 text-white border border-zinc-700 px-4 py-2 rounded-full text-sm z-50 shadow-lg">{toast}</div>}
+        {toast && <div className="fixed top-4 right-4 bg-gray-900 text-white px-5 py-2.5 rounded-full text-sm z-50 shadow-lg">{toast}</div>}
         {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC }} />}
         {tab === "input" && <InputPanel {...{ novelText, setNovelText, handleFile, handlePreview }} />}
-        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel }} />}
+        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText }} />}
         {tab === "strategy" && <StrategyView report={strategyReport} />}
         {tab === "visual" && <VisualView result={scriptResult} />}
         {tab === "characters" && <CharactersView characters={scriptResult.characters || []} />}
