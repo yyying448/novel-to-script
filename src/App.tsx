@@ -34,9 +34,38 @@ export default function App() {
   const [editedChapterMap, setEditedChapterMap] = useState<Record<string,string>>({})
   const [revChapter, setRevChapter] = useState("")
   const [revFeedback, setRevFeedback] = useState("")
+  // 首次加载从 localStorage 恢复
+  const [restored, setRestored] = useState(false)
 
-  useEffect(() => { api.fetchProviders().then(setProviders) }, [])
+  useEffect(() => {
+    api.fetchProviders().then(setProviders)
+    // 恢复本地存储
+    try {
+      const saved = localStorage.getItem("novel_script_state")
+      if (saved) {
+        const d = JSON.parse(saved)
+        if (d.novelText) setNovelText(d.novelText)
+        if (d.chapters) setChapters(d.chapters)
+        if (d.chapterMap) setChapterMap(d.chapterMap)
+        if (d.scriptResult) setScriptResult(d.scriptResult)
+        if (d.strategyReport) setStrategyReport(d.strategyReport)
+        if (d.allResults) setAllResults(d.allResults)
+      }
+    } catch {}
+    setRestored(true)
+  }, [])
   useEffect(() => { const t = setTimeout(() => toast && setToast(""), 3000); return () => clearTimeout(t) }, [toast])
+  // 自动保存
+  useEffect(() => {
+    if (!restored) return
+    try {
+      const toSave: any = { novelText, chapters, chapterMap }
+      if (scriptResult.scenes?.length) toSave.scriptResult = scriptResult
+      if (strategyReport) toSave.strategyReport = strategyReport
+      if (allResults.length) toSave.allResults = allResults
+      localStorage.setItem("novel_script_state", JSON.stringify(toSave))
+    } catch {}
+  }, [novelText, chapters, chapterMap, scriptResult, strategyReport, allResults])
   // 场景加载后自动设置第一个章节为修改目标
   useEffect(() => {
     const chs = [...new Set((scriptResult.scenes||[]).map(s=>s.chapter).filter(Boolean))]
@@ -263,12 +292,12 @@ export default function App() {
         {(scriptResult.scenes?.length ?? 0) > 0 && (
           <div className="flex items-center gap-2 mb-5 flex-wrap">
             <span className="text-xs text-gray-400 mr-2">下载：</span>
-            <button onClick={downloadWord} className="px-3 py-1 text-xs bg-black text-white rounded-full hover:bg-gray-800">Word</button>
-            <button onClick={() => download(yamlDump(scriptResult), "script.yaml")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">YAML</button>
-            <button onClick={() => download(JSON.stringify(scriptResult.scenes, null, 2), "scenes.json")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">JSON</button>
-            {strategyReport && <button onClick={() => download(strategyReport, "strategy.md")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">策略 .md</button>}
-            {(scriptResult.characters?.length ?? 0) > 0 && <button onClick={downloadCharactersWord} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">角色 Word</button>}
-            {(scriptResult.episodes?.length ?? 0) > 0 && <button onClick={downloadEpisodesWord} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">分集 Word</button>}
+            <button onClick={downloadWord} className="px-3 py-1 text-xs bg-black text-white rounded-full hover:bg-gray-800">📄 剧本 Word</button>
+            <button onClick={() => download(yamlDump(scriptResult), "script.yaml")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">📄 剧本 YAML</button>
+            <button onClick={() => download(JSON.stringify(scriptResult.scenes, null, 2), "scenes.json")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">📄 剧本 JSON</button>
+            {strategyReport && <button onClick={() => download(strategyReport, "strategy.md")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">📋 策略 MD</button>}
+            {(scriptResult.characters?.length ?? 0) > 0 && <button onClick={downloadCharactersWord} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">👥 角色 Word</button>}
+            {(scriptResult.episodes?.length ?? 0) > 0 && <button onClick={downloadEpisodesWord} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">📺 分集 Word</button>}
           </div>
         )}
         {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC }} />}
