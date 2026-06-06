@@ -44,6 +44,23 @@ export default function App() {
     const a = document.createElement("a"); a.href = u; a.download = filename; a.click()
     URL.revokeObjectURL(u)
   }
+  const downloadWord = () => {
+    const scenes = scriptResult.scenes || []
+    let html = `<html><head><meta charset="utf-8"><style>body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.8;max-width:800px;margin:40px auto}h1{text-align:center}h2{color:#333;border-bottom:2px solid #000;padding-bottom:4px}h3{margin-top:20px}.scene{margin:16px 0;padding:12px;background:#f9f9f9;border-left:3px solid #333}.dialogue{margin:8px 0 8px 20px}.speaker{font-weight:bold}.tone{color:#666;font-size:13px}</style></head><body><h1>剧本</h1>`
+    const groups: Record<string, any[]> = {}; scenes.forEach(s => { const c = s.chapter || "?"; if (!groups[c]) groups[c] = []; groups[c].push(s) })
+    for (const [ch, chs] of Object.entries(groups)) {
+      html += `<h2>${ch}</h2>`
+      chs.forEach(s => {
+        html += `<div class="scene"><h3>场景 ${s.scene_id} · ${s.location||""}</h3><p>${s.summary||""}</p>`
+        if (s.characters_present?.length) html += `<p>出场：${s.characters_present.map((c:any) => c.name).join("、")}</p>`
+        ;(s.dialogues||[]).forEach((d: any) => { html += `<div class="dialogue"><p class="speaker">${d.speaker}</p>`; (d.lines||[]).forEach((l: string) => { html += `<p>${l}</p>` }); if (d.tone||d.action) html += `<p class="tone">${d.tone||""} ${d.action||""}</p>`; html += `</div>` })
+        if (s.scene_notes) html += `<p style="color:#888">📝 ${s.scene_notes}</p>`
+        html += `</div>`
+      })
+    }
+    html += `</body></html>`
+    download(html, "script.doc", "application/msword")
+  }
 
   const handleSaveKey = async () => {
     if (!apiKey) return showToast("请输入 API Key")
@@ -131,20 +148,21 @@ export default function App() {
     finally { setConverting(false) }
   }
 
-  const viewModel = (idxOrLabel: any, scenes?: any[]) => {
+  const viewModel = (idxOrLabel: any) => {
     if (typeof idxOrLabel === "number") {
       setActiveModelIdx(idxOrLabel)
       const r = allResults[idxOrLabel]
       if (r) setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any })
     } else if (typeof idxOrLabel === "string") {
-      // 按 label 从 allResults 查找完整数据
       const r = allResults.find((x: any) => x && x.label === idxOrLabel)
       if (r) {
+        setActiveModelIdx(allResults.indexOf(r))
         setScriptResult({ scenes: r.scenes || [], characters: r.characters || [], episodes: r.episodes || [], runtime: r.runtime as any || {} })
-      } else if (scenes) {
-        setScriptResult({ scenes })
+        setTab("visual")
+        showToast("📄 已切换至 " + idxOrLabel)
+      } else {
+        showToast("⚠️ 数据未就绪，请等待所有模型完成")
       }
-      showToast("📄 正在查看：" + idxOrLabel)
     }
   }
 
@@ -174,6 +192,7 @@ export default function App() {
         {(scriptResult.scenes?.length ?? 0) > 0 && (
           <div className="flex items-center gap-2 mb-5 flex-wrap">
             <span className="text-xs text-gray-400 mr-2">下载：</span>
+            <button onClick={downloadWord} className="px-3 py-1 text-xs bg-black text-white rounded-full hover:bg-gray-800">Word</button>
             <button onClick={() => download(yamlDump(scriptResult), "script.yaml")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">YAML</button>
             <button onClick={() => download(JSON.stringify(scriptResult.scenes, null, 2), "scenes.json")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">JSON</button>
             {strategyReport && <button onClick={() => download(strategyReport, "strategy.md")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">策略 .md</button>}
