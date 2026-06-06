@@ -4,12 +4,51 @@ import type { Chapter } from "../types"
 export default function ConvertPanel(p: any) {
   const [editing, setEditing] = useState<string | null>(null)
   const [editText, setEditText] = useState("")
+  const [aiResult, setAiResult] = useState("")
+  const [aiLoading, setAiLoading] = useState(false)
   const colors = ["bg-black","bg-gray-500","bg-gray-300"]
 
   const openEdit = (ch: Chapter) => {
-    // 从 novelText 中找该章节内容
     setEditing(ch.title)
     setEditText(p.chapterMap?.[ch.title] || "")
+    setAiResult("")
+  }
+
+  const handleAiEdit = async (mode: "rewrite" | "expand") => {
+    const sel = window.getSelection()?.toString()?.trim()
+    const text = sel || editText
+    if (!text) return
+    const instruction = mode === "expand"
+      ? `请扩写以下内容，增加细节描写和人物心理活动，使内容更加丰满（保持原文风格）`
+      : `请改写以下内容，优化语言表达，使文字更加流畅生动（保持原意不变）`
+
+    setAiLoading(true)
+    try {
+      const r = await fetch("/api/ai-edit", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ chapter_text: text, feedback: instruction, api_key: p.apiKey, provider: p.provider, base_url: p.customUrl || null, model: p.model || null })
+      })
+      const d = await r.json()
+      if (d.success) setAiResult(d.text)
+      else setAiResult("❌ " + (d.error || "失败"))
+    } catch (e: any) { setAiResult("❌ " + e.message) }
+    finally { setAiLoading(false) }
+  }
+
+  const applyAiResult = () => {
+    if (!aiResult) return
+    const sel = window.getSelection()
+    if (sel && sel.toString().trim()) {
+      const start = (document.getElementById("chapter-editor") as HTMLTextAreaElement)?.selectionStart || 0
+      const end = (document.getElementById("chapter-editor") as HTMLTextAreaElement)?.selectionEnd || 0
+      const before = editText.slice(0, start)
+      const after = editText.slice(end)
+      setEditText(before + aiResult + after)
+    } else {
+      setEditText(aiResult)
+    }
+    setAiResult("")
   }
 
   return (
@@ -50,16 +89,34 @@ export default function ConvertPanel(p: any) {
           {p.allResults.filter(Boolean).map((r:any,i:number)=><option key={i} value={i}>{r.label}（{(r.scenes||[]).length}场）</option>)}
         </select></div>
       )}
-      {/* 章节编辑弹窗 */}
       {editing && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={()=>setEditing(null)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[80vh] flex flex-col shadow-xl" onClick={e=>e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={()=>{setEditing(null);setAiResult("")}}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] flex flex-col shadow-xl" onClick={e=>e.stopPropagation()}>
             <h3 className="text-base font-bold text-black mb-3">编辑章节：{editing}</h3>
-            <textarea value={editText} onChange={e => setEditText(e.target.value)}
-              className="flex-1 min-h-[300px] px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-black resize-none outline-none"/>
-            <div className="flex gap-3 mt-4 justify-end">
-              <button onClick={()=>setEditing(null)} className="px-5 py-2 border border-gray-300 rounded-full text-sm text-gray-600 hover:bg-gray-50">取消</button>
-              <button onClick={()=>{p.setNovelText(editText);setEditing(null)}} className="px-5 py-2 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800">保存修改</button>
+            <textarea id="chapter-editor" value={editText} onChange={e=>setEditText(e.target.value)}
+              className="flex-1 min-h-[250px] px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-black resize-none outline-none"/>
+            {aiLoading && <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-center text-gray-500">⏳ AI 正在处理，请稍候...</div>}
+            {aiResult && (
+              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm max-h-48 overflow-y-auto">
+                <p className="text-xs text-gray-500 mb-2 font-medium sticky top-0 bg-yellow-50 pb-1">AI 处理结果（预览）：</p>
+                <p className="text-gray-800 whitespace-pre-wrap">{aiResult}</p>
+                <div className="flex gap-2 mt-2 sticky bottom-0 bg-yellow-50 pt-1 border-t border-yellow-200">
+                  <button onClick={applyAiResult} className="px-3 py-1 bg-black text-white rounded-full text-xs font-medium">✅ 替换</button>
+                  <button onClick={()=>setAiResult("")} className="px-3 py-1 border border-gray-300 rounded-full text-xs text-gray-500">取消</button>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-3 mt-4 justify-between items-center">
+              <div className="flex gap-2">
+                <button onClick={()=>handleAiEdit("rewrite")} disabled={aiLoading}
+                  className="px-3 py-1.5 border border-gray-300 rounded-full text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">✨ 改写选中</button>
+                <button onClick={()=>handleAiEdit("expand")} disabled={aiLoading}
+                  className="px-3 py-1.5 border border-gray-300 rounded-full text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">📝 扩写选中</button>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={()=>{setEditing(null);setAiResult("")}} className="px-5 py-2 border border-gray-300 rounded-full text-sm text-gray-600 hover:bg-gray-50">取消</button>
+                <button onClick={()=>{p.setNovelText(editText);setEditing(null)}} className="px-5 py-2 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800">保存修改</button>
+              </div>
             </div>
           </div>
         </div>

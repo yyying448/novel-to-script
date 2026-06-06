@@ -42,7 +42,7 @@ class ConvertRequest(BaseModel):
 
 class ReviseRequest(BaseModel):
     chapter_text: str
-    existing_yaml: str
+    existing_yaml: str = ""
     feedback: str
     api_key: str
     provider: str = "deepseek"
