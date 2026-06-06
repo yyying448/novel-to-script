@@ -198,13 +198,13 @@ def revise_script(
     feedback: str,
     llm_client,
     model: str = "deepseek-chat",
+    chapter_title: str = "",
 ) -> Dict[str, Any]:
     """
     根据用户修改意见，二次生成剧本
     """
     from llm_client import call_llm
 
-    # 截断保护
     truncated_text = chapter_text[:8000]
     truncated_yaml = existing_yaml[:20000]
     if len(existing_yaml) > 20000:
@@ -218,15 +218,19 @@ def revise_script(
 
     response_text = call_llm(llm_client, SYSTEM_PROMPT, prompt, model=model)
 
-    # 两阶段容错解析
     scenes = _parse_llm_yaml(response_text)
     if not scenes:
         scenes = _parse_llm_yaml_fallback(response_text)
 
     if not scenes:
         raise ValueError(
-            "AI 未能生成有效剧本。建议：1) 缩小修改范围（如只改一句台词）；2) 试试换个说法描述修改意见"
+            "AI 未能生成有效剧本。建议：1) 缩小修改范围 2) 换个说法描述意见"
         )
+
+    # 确保每个场景标注所属章节
+    for s in scenes:
+        if not s.get("chapter"):
+            s["chapter"] = chapter_title
 
     return {"scenes": scenes}
 
@@ -279,7 +283,10 @@ def _parse_llm_yaml(text: str) -> list:
             r = yaml.safe_load("scene_id:" + block)
             if isinstance(r, dict): scenes.append(r)
         except yaml.YAMLError:
-            pass
+            # 降级：尝试把整个 block 当做一个 scene 的 summary
+            lines = block.strip().split("\n")
+            summary = lines[0].strip() if lines else block.strip()[:50]
+            scenes.append({"location": "未知", "summary": summary, "characters_present": [], "dialogues": [], "scene_notes": "自动提取"})
     return scenes
 
 

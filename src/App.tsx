@@ -114,12 +114,22 @@ export default function App() {
     else showToast(r.error)
   }
 
+  const chaptersRef = useRef(chapters)
+  chaptersRef.current = chapters
   const activeModelIdxRef = useRef(activeModelIdx)
   activeModelIdxRef.current = activeModelIdx
 
   const handleSSE = useCallback((e: SSEEvent) => {
     switch (e.type) {
-      case "chapters": if (e.data) { setChapters(e.data); setChapterMap(e.chapter_map || {}) } break
+      case "chapters":
+        if (e.data && e.data.length > 0) {
+          // 只有新数据不差时才更新（防 SSE 乱序覆盖）
+          if (e.data.length >= chaptersRef.current.length) {
+            setChapters(e.data)
+            if (e.chapter_map) setChapterMap(e.chapter_map)
+          }
+        }
+        break
       case "strategy": if (e.report) { setStrategyReport(e.report); setTab("strategy") } break
       case "progress": {
         const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
@@ -166,24 +176,32 @@ export default function App() {
   const handleRevise = async () => {
     if (!revFeedback) return showToast("请输入修改意见")
     if (!revChapter) return showToast("请选择目标章节")
-    const chapterScenes = (scriptResult.scenes || []).filter(s => s.chapter === revChapter)
+    const allScenes = scriptResult.scenes || []
+    const chapterScenes = allScenes.filter(s => s.chapter === revChapter)
     if (!chapterScenes.length) return showToast("该章节暂无剧本数据，请先完成转换")
     const chapterText = chapterMap[revChapter]
-    if (!chapterText) return showToast("未找到该章节原文，请重新预览章节后再修改")
+    if (!chapterText) return showToast("未找到该章节原文，请重新预览")
     const existingYaml = yamlDump({ scenes: chapterScenes })
     setConverting(true)
+    showToast("⏳ 正在修改 " + revChapter + "...")
     try {
-      const r = await api.reviseScript({ ...apiParams(), chapter_text: chapterText, existing_yaml: existingYaml, feedback: revFeedback })
-      if (r.success) {
-        showToast("✅ 修改成功")
-        const other = (scriptResult.scenes || []).filter(s => s.chapter !== revChapter)
-        const merged = [...other, ...(r.result?.scenes || [])].sort((a: any, b: any) => a.scene_id - b.scene_id)
+      const r = await api.reviseScript({ ...apiParams(), chapter_text: chapterText, existing_yaml: existingYaml, feedback: revFeedback, chapter_title: revChapter })
+      if (r.success && r.result?.scenes?.length) {
+        const other = allScenes.filter(s => s.chapter !== revChapter)
+        const newScenes = r.result.scenes
+        const merged = [...other, ...newScenes].sort((a: any, b: any) => (a.scene_id || 0) - (b.scene_id || 0))
         merged.forEach((s: any, i: number) => { s.scene_id = i + 1 })
-        setScriptResult({ ...scriptResult, scenes: merged })
+        // 重新计算角色
+        const chars = recomputeCharacters(merged)
+        const newResult = { ...scriptResult, scenes: merged, characters: chars, character_count: chars.length }
+        setScriptResult(newResult)
+        setTab("visual")  // 自动跳转到可视化查看效果
+        showToast("✅ " + revChapter + " 修改成功（" + newScenes.length + "场）")
+        setRevFeedback("")
       } else {
-        showToast("❌ " + (r.error || r.message || "修改失败，请重试"))
+        showToast("❌ " + (r.error || "修改失败：未返回有效剧本"))
       }
-    } catch (e: any) { showToast("❌ 修改异常: " + (e.message || e)) }
+    } catch (e: any) { showToast("❌ " + (e.message || "修改异常")) }
     finally { setConverting(false) }
   }
 
@@ -252,6 +270,25 @@ export default function App() {
       </main>
     </div>
   )
+}
+
+function recomputeCharacters(scenes: any[]) {
+  const map: Record<string, any> = {}
+  scenes.forEach((s: any) => {
+    (s.characters_present || []).forEach((c: any) => {
+      if (!c || !c.name) return
+      if (!map[c.name]) map[c.name] = { name: c.name, role: c.role || "配角", chapters: [], scene_count: 0, dialogue_count: 0, personality: "", speech_style: "", identity: "", motivation: "", appearance: "", relationships: {}, first_chapter: s.chapter || "?", chapters_count: 0 }
+      const p = map[c.name]
+      if (c.role === "主角") p.role = "主角"
+      if (!p.chapters.includes(s.chapter)) p.chapters.push(s.chapter)
+      p.scene_count++
+      p.dialogue_count += (s.dialogues || []).filter((d: any) => d && d.speaker === c.name).length
+    })
+  })
+  const result = Object.values(map)
+  result.forEach((c: any) => { c.chapters_count = c.chapters.length })
+  result.sort((a: any, b: any) => { const o: Record<string, number> = { "主角": 0, "重要配角": 1 }; return (o[a.role] ?? 2) - (o[b.role] ?? 2) || b.scene_count - a.scene_count })
+  return result
 }
 
 function yamlDump(o: any, d = 0): string {
