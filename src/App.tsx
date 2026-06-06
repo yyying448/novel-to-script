@@ -20,6 +20,7 @@ export default function App() {
   const [chapterMap, setChapterMap] = useState<Record<string, string>>({})
   const [epMinutes, setEpMinutes] = useState(0)
   const [converting, setConverting] = useState(false)
+  const [revising, setRevising] = useState(false)
   const [lanes, setLanes] = useState<any[]>([])
   const [scriptResult, setScriptResult] = useState<ScriptResult>({})
   const [allResults, setAllResults] = useState<ModelResult[]>([])
@@ -30,6 +31,7 @@ export default function App() {
   const [cmpKeyB, setCmpKeyB] = useState(""); const [cmpKeyC, setCmpKeyC] = useState("")
   const [cmpModelB, setCmpModelB] = useState(""); const [cmpModelC, setCmpModelC] = useState("")
   const [cmpProvB, setCmpProvB] = useState("openai"); const [cmpProvC, setCmpProvC] = useState("openai")
+  const [editedChapterMap, setEditedChapterMap] = useState<Record<string,string>>({})
   const [revChapter, setRevChapter] = useState("")
   const [revFeedback, setRevFeedback] = useState("")
 
@@ -114,22 +116,12 @@ export default function App() {
     else showToast(r.error)
   }
 
-  const chaptersRef = useRef(chapters)
-  chaptersRef.current = chapters
   const activeModelIdxRef = useRef(activeModelIdx)
   activeModelIdxRef.current = activeModelIdx
 
   const handleSSE = useCallback((e: SSEEvent) => {
     switch (e.type) {
-      case "chapters":
-        if (e.data && e.data.length > 0) {
-          // 只有新数据不差时才更新（防 SSE 乱序覆盖）
-          if (e.data.length >= chaptersRef.current.length) {
-            setChapters(e.data)
-            if (e.chapter_map) setChapterMap(e.chapter_map)
-          }
-        }
-        break
+      case "chapters": if (e.data?.length) { setChapters(e.data); if (e.chapter_map) setChapterMap(e.chapter_map) } break
       case "strategy": if (e.report) { setStrategyReport(e.report); setTab("strategy") } break
       case "progress": {
         const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
@@ -163,10 +155,18 @@ export default function App() {
   }, [])
 
   const handleConvert = () => {
+    // 合并章节编辑到全文
+    let text = novelText
+    for (const [title, content] of Object.entries(editedChapterMap)) {
+      const oldContent = chapterMap[title]
+      if (oldContent && text.includes(oldContent)) {
+        text = text.replace(oldContent, content)
+      }
+    }
     setConverting(true); setAllResults([]); setScriptResult({}); setStrategyReport(""); setCompareResults([])
     setLanes([{ label: "模型 A", current: 0, total: chapters.length || 1, status: "等待中...", percent: 0, done: false }])
     api.convertNovel({
-      ...apiParams(), episode_minutes: epMinutes,
+      ...apiParams({ text }), episode_minutes: epMinutes,
       compare_keys: JSON.stringify([cmpKeyB, cmpKeyC].filter(Boolean)),
       compare_models: JSON.stringify([cmpModelB, cmpModelC].filter(Boolean)),
       compare_providers: JSON.stringify([cmpProvB, cmpProvC].filter(Boolean)),
@@ -182,7 +182,7 @@ export default function App() {
     const chapterText = chapterMap[revChapter]
     if (!chapterText) return showToast("未找到该章节原文，请重新预览")
     const existingYaml = yamlDump({ scenes: chapterScenes })
-    setConverting(true)
+    setRevising(true)
     showToast("⏳ 正在修改 " + revChapter + "...")
     try {
       const r = await api.reviseScript({ ...apiParams(), chapter_text: chapterText, existing_yaml: existingYaml, feedback: revFeedback, chapter_title: revChapter })
@@ -193,23 +193,23 @@ export default function App() {
         merged.forEach((s: any, i: number) => { s.scene_id = i + 1 })
         // 重新计算角色
         const chars = recomputeCharacters(merged)
-        const newResult = { ...scriptResult, scenes: merged, characters: chars, character_count: chars.length }
+        const newResult = { ...scriptResult, scenes: merged, characters: chars, character_count: chars.length, episodes: [], episode_count: 0 }
         setScriptResult(newResult)
-        // 同步更新 allResults 中当前模型的数据
+        // 同步更新 allResults
         setAllResults(prev => {
           const n = [...prev]
           const idx = activeModelIdxRef.current
-          if (n[idx]) n[idx] = { ...n[idx], scenes: merged, characters: chars, character_count: chars.length }
+          if (n[idx]) n[idx] = { ...n[idx], scenes: merged, characters: chars, character_count: chars.length, episodes: [], episode_count: 0 }
           return n
         })
         setTab("visual")
-        showToast("✅ " + revChapter + " 修改成功（" + newScenes.length + "场）")
+        showToast("✅ " + revChapter + " 修改成功（" + newScenes.length + "场）角色已同步，分集需重新转换")
         setRevFeedback("")
       } else {
         showToast("❌ " + (r.error || "修改失败：未返回有效剧本"))
       }
     } catch (e: any) { showToast("❌ " + (e.message || "修改异常")) }
-    finally { setConverting(false) }
+    finally { setRevising(false) }
   }
 
   const viewModel = (idxOrLabel: any) => {
@@ -266,13 +266,13 @@ export default function App() {
         )}
         {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC }} />}
         {tab === "input" && <InputPanel {...{ novelText, setNovelText, handleFile, handlePreview }} />}
-        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText, novelText, apiKey, provider, model, customUrl, setRevChapter }} />}
+        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText, novelText, editedChapterMap, setEditedChapterMap, apiKey, provider, model, customUrl, setRevChapter }} />}
         {tab === "strategy" && <StrategyView report={strategyReport} />}
         {tab === "visual" && <VisualView result={scriptResult} />}
         {tab === "characters" && <CharactersView characters={scriptResult.characters||[]} />}
         {tab === "episodes" && <EpisodesView episodes={scriptResult.episodes||[]} epMinutes={epMinutes} />}
         {tab === "compare" && <CompareView results={compareResults} viewModel={viewModel} />}
-        {tab === "revise" && <RevisePanel {...{ scriptResult, chapterMap, revChapter, setRevChapter, revFeedback, setRevFeedback, handleRevise }} />}
+        {tab === "revise" && <RevisePanel {...{ scriptResult, chapterMap, revChapter, setRevChapter, revFeedback, setRevFeedback, handleRevise, revising }} />}
         {tab === "yaml" && <YamlView result={scriptResult} runtime={scriptResult.runtime} sceneCount={scriptResult.scenes?.length || 0} charCount={scriptResult.characters?.length || 0} epCount={scriptResult.episodes?.length || 0} />}
       </main>
     </div>
