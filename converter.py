@@ -41,10 +41,23 @@ def _convert_single_chapter(
         )
         response_text = call_llm(llm_client, SYSTEM_PROMPT, prompt, model=model)
         chunk_scenes = _parse_llm_yaml(response_text)
+        if not chunk_scenes:
+            chunk_scenes = _parse_llm_yaml_fallback(response_text)
         # 为每个场景打上章节标签
         for scene in chunk_scenes:
             scene["chapter"] = chapter_title
         chapter_scenes.extend(chunk_scenes)
+
+    # 兜底：如果 LLM 完全没输出，至少生成一个占位场景
+    if not chapter_scenes:
+        chapter_scenes = [{
+            "chapter": chapter_title,
+            "location": "未知",
+            "characters_present": [],
+            "summary": f"{chapter_title}（解析失败，请检查该章内容）",
+            "dialogues": [],
+            "scene_notes": "LLM 未返回有效场景，可能原因：1) 原文过短 2) 格式异常 3) API 返回被截断"
+        }]
 
     return chapter_title, chapter_scenes
 
