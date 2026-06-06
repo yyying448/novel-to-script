@@ -375,6 +375,36 @@ async def convert(req: ConvertRequest):
 
 
 # ============================================================
+# API：AI 改写/扩写选中文本
+# ============================================================
+@app.post("/api/ai-edit")
+async def ai_edit(req: ReviseRequest):
+    """对选中的文本进行 AI 改写或扩写"""
+    try:
+        from llm_client import create_client, call_llm, get_default_model
+
+        client = create_client(req.api_key, provider=req.provider, base_url=req.base_url)
+        model = req.model or get_default_model(req.provider)
+
+        prompt = f"""请根据以下要求处理这段小说文本：
+
+=== 原文 ===
+{req.chapter_text}
+===
+
+=== 处理要求 ===
+{req.feedback}
+===
+
+请直接输出处理后的文本，不要添加任何解释。"""
+
+        result = call_llm(client, "你是一位专业的小说编辑，擅长改写和扩写文本。只输出处理后的文本，不要加任何前言后语。", prompt, model=model, max_tokens=2048)
+        return JSONResponse({"success": True, "text": result.strip()})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+# ============================================================
 # API：根据意见修改剧本
 # ============================================================
 @app.post("/api/revise")

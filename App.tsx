@@ -132,19 +132,23 @@ export default function App() {
     if (!revFeedback) return showToast("请输入修改意见")
     if (!revChapter) return showToast("请选择目标章节")
     const chapterScenes = (scriptResult.scenes || []).filter(s => s.chapter === revChapter)
-    if (!chapterScenes.length) return showToast("该章节暂无剧本数据")
+    if (!chapterScenes.length) return showToast("该章节暂无剧本数据，请先完成转换")
+    const chapterText = chapterMap[revChapter]
+    if (!chapterText) return showToast("未找到该章节原文，请重新预览章节后再修改")
     const existingYaml = yamlDump({ scenes: chapterScenes })
     setConverting(true)
     try {
-      const r = await api.reviseScript({ ...apiParams(), chapter_text: chapterMap[revChapter] || novelText, existing_yaml: existingYaml, feedback: revFeedback })
+      const r = await api.reviseScript({ ...apiParams(), chapter_text: chapterText, existing_yaml: existingYaml, feedback: revFeedback })
       if (r.success) {
         showToast("✅ 修改成功")
         const other = (scriptResult.scenes || []).filter(s => s.chapter !== revChapter)
-        const merged = [...other, ...(r.result.scenes || [])].sort((a: any, b: any) => a.scene_id - b.scene_id)
+        const merged = [...other, ...(r.result?.scenes || [])].sort((a: any, b: any) => a.scene_id - b.scene_id)
         merged.forEach((s: any, i: number) => { s.scene_id = i + 1 })
         setScriptResult({ ...scriptResult, scenes: merged })
-      } else showToast(r.error)
-    } catch (e: any) { showToast("修改失败: " + e.message) }
+      } else {
+        showToast("❌ " + (r.error || r.message || "修改失败，请重试"))
+      }
+    } catch (e: any) { showToast("❌ 修改异常: " + (e.message || e)) }
     finally { setConverting(false) }
   }
 
@@ -202,7 +206,7 @@ export default function App() {
         )}
         {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC }} />}
         {tab === "input" && <InputPanel {...{ novelText, setNovelText, handleFile, handlePreview }} />}
-        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText }} />}
+        {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText, apiKey, provider, model, customUrl }} />}
         {tab === "strategy" && <StrategyView report={strategyReport} />}
         {tab === "visual" && <VisualView result={scriptResult} />}
         {tab === "characters" && <CharactersView characters={scriptResult.characters || []} />}
