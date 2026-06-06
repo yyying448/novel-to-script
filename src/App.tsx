@@ -35,8 +35,6 @@ export default function App() {
   const [editedChapterMap, setEditedChapterMap] = useState<Record<string,string>>({})
   const [revChapter, setRevChapter] = useState("")
   const [revFeedback, setRevFeedback] = useState("")
-  const [vizLoading, setVizLoading] = useState(false)
-  const [vizResult, setVizResult] = useState("")
   const [restored, setRestored] = useState(false)
 
   useEffect(() => {
@@ -251,27 +249,6 @@ export default function App() {
     finally { setRevising(false) }
   }
 
-  const handleVisualize = async () => {
-    const allScenes = scriptResult.scenes || []
-    const chapterScenes = allScenes.filter(s => s.chapter === revChapter)
-    if (!chapterScenes.length) return showToast("请先选择有剧本数据的章节")
-    const chapterText = chapterMap[revChapter] || novelText
-    const yaml = yamlDump({ scenes: chapterScenes })
-    setVizLoading(true)
-    setVizResult("")
-    try {
-      const r = await fetch("/api/visualize", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ chapter_text: chapterText.slice(0,3000), existing_yaml: yaml, feedback: "", api_key: apiKey, provider, base_url: customUrl||null, model: model||null, chapter_title: revChapter })
-      })
-      const d = await r.json()
-      if (d.success) { setVizResult(d.text); showToast("🎬 视觉化改写完成，查看预览") }
-      else showToast("❌ " + (d.error||"失败"))
-    } catch (e: any) { showToast("❌ " + e.message) }
-    finally { setVizLoading(false) }
-  }
-
   const viewModel = (idxOrLabel: any) => {
     if (typeof idxOrLabel === "number") {
       setActiveModelIdx(idxOrLabel)
@@ -332,7 +309,7 @@ export default function App() {
         {tab === "characters" && <CharactersView characters={scriptResult.characters||[]} />}
         {tab === "episodes" && <EpisodesView episodes={scriptResult.episodes||[]} epMinutes={epMinutes} />}
         {tab === "compare" && <CompareView results={compareResults} viewModel={viewModel} />}
-        {tab === "revise" && <RevisePanel {...{ scriptResult, chapterMap, revChapter, setRevChapter, revFeedback, setRevFeedback, handleRevise, handleVisualize, revising, vizLoading, vizResult, setVizResult }} />}
+        {tab === "revise" && <RevisePanel {...{ scriptResult, chapterMap, revChapter, setRevChapter, revFeedback, setRevFeedback, handleRevise, revising }} />}
         {tab === "yaml" && <YamlView result={scriptResult} runtime={scriptResult.runtime} sceneCount={scriptResult.scenes?.length || 0} charCount={scriptResult.characters?.length || 0} epCount={scriptResult.episodes?.length || 0} />}
       </main>
     </div>

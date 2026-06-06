@@ -427,45 +427,6 @@ async def ai_edit(req: ReviseRequest):
 
 
 # ============================================================
-# API：视觉化改写（Show Don't Tell）
-# ============================================================
-@app.post("/api/visualize")
-async def visualize(req: ReviseRequest):
-    """将剧本中的抽象描写改写为可视化的动作和画面"""
-    try:
-        from llm_client import create_client, call_llm, get_default_model
-        client = create_client(req.api_key, provider=req.provider, base_url=req.base_url)
-        model = req.model or get_default_model(req.provider)
-
-        prompt = f"""你是一位专业的影视编剧，擅长"Show Don't Tell"视觉化改写。
-
-请将以下剧本中的抽象描写改为能被摄影机拍摄的具体动作、表情和画面：
-
-=== 原著参考（请严格基于此内容，不要编造剧情）===
-{req.chapter_text[:2000] or "（无原文参考，请严格基于剧本改写）"}
-===
-
-=== 当前剧本 ===
-{req.existing_yaml or req.chapter_text}
-===
-
-改写规则：
-- 只改写 action 和 scene_notes 字段，保留原有对话、角色名、场景名
-- 内心感受 → 具体表情+身体动作
-- 抽象形容词 → 可拍摄的视觉元素
-- 人物状态 → 外部行为
-- 禁止编造新角色、新情节、新对话
-- 禁止改变原有剧情走向
-
-请输出改写后的 YAML，格式与输入一致："""
-
-        result = call_llm(client, "你是一位影视视觉化专家。只输出改写后的 YAML，不添加解释。", prompt, model=model, max_tokens=4096)
-        return JSONResponse({"success": True, "text": result.strip()})
-    except Exception as e:
-        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
-
-
-# ============================================================
 # API：根据意见修改剧本
 # ============================================================
 @app.post("/api/revise")
