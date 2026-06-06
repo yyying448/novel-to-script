@@ -258,7 +258,19 @@ async def convert(req: ConvertRequest):
                 result["episodes"] = []
                 result["episode_count"] = 0
 
-            # 推送最终结果（含所有分析数据）
+            # ===== 多模型对比（必须在 done 之前，否则 SSE 已关闭）=====
+            if req.compare_keys:
+                _put_sync(queue, {
+                    "type": "progress",
+                    "current": len(chapters),
+                    "total": len(chapters),
+                    "title": "对比模型生成中...",
+                    "status": "start",
+                    "percent": 100
+                }, event_loop)
+                _run_comparison(req, result, queue, event_loop)
+
+            # 推送最终结果（含所有分析数据）—— 务必最后推送
             scene_count = len(result.get("scenes", []))
             char_count = result.get("character_count", 0)
             _put_sync(queue, {
@@ -272,10 +284,6 @@ async def convert(req: ConvertRequest):
                 "runtime": result.get("runtime", {}),
                 "episode_count": result.get("episode_count", 0)
             }, event_loop)
-
-            # ===== 多模型对比 =====
-            if req.compare_keys:
-                _run_comparison(req, result, queue, event_loop)
 
         except Exception as e:
             _put_sync(queue, {
