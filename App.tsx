@@ -125,10 +125,15 @@ export default function App() {
     finally { setConverting(false) }
   }
 
-  const viewModel = (idx: number) => {
-    setActiveModelIdx(idx)
-    const r = allResults[idx]
-    if (r) setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any })
+  const viewModel = (idxOrLabel: any, scenes?: any[]) => {
+    if (typeof idxOrLabel === "number") {
+      setActiveModelIdx(idxOrLabel)
+      const r = allResults[idxOrLabel]
+      if (r) setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any })
+    } else if (scenes) {
+      setScriptResult({ scenes })
+      showToast("📄 正在查看：" + idxOrLabel)
+    }
   }
 
   const nav = (t: Tab, icon: string, label: string) => (
@@ -161,7 +166,7 @@ export default function App() {
         {tab === "visual" && <VisualView result={scriptResult} />}
         {tab === "characters" && <CharactersView characters={scriptResult.characters || []} />}
         {tab === "episodes" && <EpisodesView episodes={scriptResult.episodes || []} epMinutes={epMinutes} />}
-        {tab === "compare" && <CompareView results={compareResults} allResults={allResults} viewModel={viewModel} />}
+        {tab === "compare" && <CompareView results={compareResults} viewModel={viewModel} />}
         {tab === "revise" && <RevisePanel {...{ scriptResult, chapterMap, revChapter, setRevChapter, revFeedback, setRevFeedback, handleRevise }} />}
         {tab === "yaml" && <YamlView result={scriptResult} runtime={scriptResult.runtime} sceneCount={scriptResult.scenes?.length || 0} charCount={scriptResult.characters?.length || 0} epCount={scriptResult.episodes?.length || 0} />}
       </main>
