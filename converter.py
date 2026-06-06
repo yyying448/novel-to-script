@@ -63,21 +63,6 @@ def convert_novel_to_script(
     model: str = "deepseek-chat",
     requirement: str = "",
 ) -> Dict[str, Any]:
-    try:
-        return _convert_novel_to_script_impl(novel_text, llm_client, progress_callback, partial_callback, model, requirement)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {"scenes": [], "characters": [], "chapter_map": {}, "character_count": 0, "error": str(e)}
-
-def _convert_novel_to_script_impl(
-    novel_text: str,
-    llm_client,
-    progress_callback: Optional[Callable] = None,
-    partial_callback: Optional[Callable] = None,
-    model: str = "deepseek-chat",
-    requirement: str = "",
-) -> Dict[str, Any]:
     global _user_requirement
     _user_requirement = requirement
     chapters = split_chapters(novel_text)
