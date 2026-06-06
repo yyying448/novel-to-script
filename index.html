@@ -164,11 +164,10 @@
         </div>
     </div>
 
-    <!-- 第4步：转换进度 -->
+    <!-- 第4步：转换进度（多模型并行） -->
     <div class="card hidden" id="step-progress">
-        <h2>4️⃣ 转换进度</h2>
-        <div class="progress-bar"><div class="fill" id="progress-fill"></div></div>
-        <p class="progress-text" id="progress-text">等待开始...</p>
+        <h2>4️⃣ 转换进度 <span id="progress-summary" style="font-size:0.8rem;color:var(--muted);"></span></h2>
+        <div id="progress-lanes"></div>
     </div>
 
     <!-- 第5步：结果展示 -->
@@ -228,6 +227,50 @@ let state = {
     strategyReport: '',
     runtime: null,
 };
+
+function updateProgressSummary(msg) {
+    document.getElementById('progress-summary').textContent = msg;
+}
+function initLanes(labels) {
+    let html = '';
+    const colors = ['#e94560','#f093fb','#0f3460'];
+    labels.forEach((l, i) => {
+        html += `<div style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;font-size:0.85rem;">
+                <span style="color:${colors[i]||'var(--accent)'};">⬤ ${esc(l)}</span>
+                <span id="lane-status-${i}" style="color:var(--muted);">等待开始...</span>
+            </div>
+            <div class="progress-bar" style="margin-top:4px;"><div class="fill" id="lane-fill-${i}" style="width:0%;background:${colors[i]||'var(--accent)'};"></div></div>
+        </div>`;
+    });
+    document.getElementById('progress-lanes').innerHTML = html;
+    modelLanes = {};
+}
+function updateModelLane(event) {
+    const label = event.label || '模型 A';
+    const idx = event.label ? (event.label==='模型 B'?1:event.label==='模型 C'?2:0) : 0;
+    if (!document.getElementById('lane-status-'+idx)) {
+        // 动态创建 lane
+    }
+    if (event.status === 'start') {
+        const el = document.getElementById('lane-status-'+idx);
+        if (el) el.textContent = `⏳ ${event.title} (${event.current}/${event.total})`;
+    } else {
+        const fill = document.getElementById('lane-fill-'+idx);
+        const status = document.getElementById('lane-status-'+idx);
+        if (fill) fill.style.width = event.percent + '%';
+        if (status) status.textContent = `✅ ${event.title} (${event.current}/${event.total})`;
+        if (event.title) updateReviseChapterSelect(event.title);
+    }
+}
+function markModelDone(event) {
+    const idx = event.label==='模型 B'?1:event.label==='模型 C'?2:0;
+    const fill = document.getElementById('lane-fill-'+idx);
+    const status = document.getElementById('lane-status-'+idx);
+    if (fill) fill.style.width = '100%';
+    if (status) status.textContent = event.error ? '❌ '+event.error : '✅ 完成！';
+    modelLanes[event.label] = 'done';
+}
 
 // 初始化
 document.addEventListener('DOMContentLoaded', async () => {
@@ -427,6 +470,13 @@ async function startConvert() {
     document.getElementById('step-progress').classList.remove('hidden');
     document.getElementById('step-result').classList.add('hidden');
     document.getElementById('btn-convert').disabled = true;
+    // 检测对比模式，初始化通道
+    const hasB = !!(document.getElementById('compare-key-b')?.value?.trim());
+    const hasC = !!(document.getElementById('compare-key-c')?.value?.trim());
+    const labels = ['模型 A'];
+    if (hasB) labels.push('模型 B');
+    if (hasC) labels.push('模型 C');
+    initLanes(labels);
 
     try {
         const resp = await fetch('/api/convert', {
@@ -476,67 +526,57 @@ async function startConvert() {
     }
 }
 
+// 多模型进度追踪
+let modelLanes = {};
 function handleSSE(event) {
     switch (event.type) {
         case 'chapters':
             state.chapters = event.data;
             if (event.chapter_map) state.chapterMap = event.chapter_map;
-            document.getElementById('progress-text').textContent =
-                `章节识别完成，共 ${event.count} 章，开始逐章转换...`;
+            updateProgressSummary(`章节识别完成，共 ${event.count} 章`);
             break;
         case 'strategy':
-            // 改编策略报告
             state.strategyReport = event.report;
             renderStrategy(event.report);
             document.getElementById('step-result').classList.remove('hidden');
-            document.getElementById('progress-text').textContent =
-                '📋 改编策略已生成，开始逐章转换...';
+            updateProgressSummary('📋 改编策略已生成');
             break;
         case 'progress':
-            if (event.status === 'start') {
-                document.getElementById('progress-text').textContent =
-                    `⏳ 开始处理：${event.title} (${event.current}/${event.total})`;
-            } else {
-                const pct = event.percent + '%';
-                document.getElementById('progress-fill').style.width = pct;
-                document.getElementById('progress-text').textContent =
-                    `✅ 完成：${event.title} (${event.current}/${event.total})`;
-                updateReviseChapterSelect(event.title);
-            }
+            updateModelLane(event);
+            break;
+        case 'model_done':
+            if (event.label) markModelDone(event);
             break;
         case 'done':
-            document.getElementById('progress-fill').style.width = '100%';
-            document.getElementById('progress-text').textContent = '✅ 转换完成！';
+            updateProgressSummary('✅ 全部完成！');
             document.getElementById('btn-convert').disabled = false;
             state.scriptResult = event.result;
-            if (event.chapter_map) state.chapterMap = event.chapter_map;
-            if (event.strategy_report) {
-                state.strategyReport = event.strategy_report;
-                renderStrategy(event.strategy_report);
-            }
             if (event.runtime) state.runtime = event.runtime;
+            // 存储所有模型结果用于对比
+            if (event.all_results) state.allResults = event.all_results;
             showResult(event.result, event.scene_count);
             document.getElementById('step-result').classList.remove('hidden');
             break;
         case 'partial':
-            // 中间结果：实时展示已完成章节的剧本 + 角色档案
-            state.scriptResult = { scenes: event.scenes, characters: event.characters };
-            showResult(state.scriptResult, event.scenes.length);
-            if (event.characters && event.characters.length) {
-                renderCharacters(event.characters);
+            // 中间结果（仅主模型实时展示剧本预览）
+            if (!event.label || event.label === '模型 A') {
+                state.scriptResult = { scenes: event.scenes, characters: event.characters };
+                showResult(state.scriptResult, event.scenes.length);
+                if (event.characters && event.characters.length) {
+                    renderCharacters(event.characters);
+                }
+                document.getElementById('step-result').classList.remove('hidden');
             }
-            document.getElementById('step-result').classList.remove('hidden');
-            document.getElementById('progress-text').textContent =
-                `📝 已完成 ${event.completed}/${event.total} 章，剧本实时预览中...`;
+            updateProgressSummary(`📝 ${event.label||'模型 A'} 已完成 ${event.completed}/${event.total} 章`);
             break;
         case 'compare':
             // 多模型对比结果
             state.compareResults = event.results;
             renderCompare(event.results);
-            document.getElementById('progress-text').textContent = '🔬 对比评分已完成';
+            updateProgressSummary('🔬 对比评分已完成');
             break;
         case 'error':
-            document.getElementById('progress-text').textContent = '❌ ' + event.message;
+            updateProgressSummary('❌ ' + event.message);
             document.getElementById('btn-convert').disabled = false;
             toast(event.message, 'error');
             break;

@@ -166,67 +166,87 @@ async def convert(req: ConvertRequest):
     - {"type": "error", "message": "..."}       → 错误
     """
     queue: asyncio.Queue = asyncio.Queue()
-    # 在异步上下文中捕获事件循环引用（工作线程里拿不到，必须在这里拿）
     event_loop = asyncio.get_running_loop()
 
-    def run_conversion():
-        """在独立线程中运行转换（避免阻塞事件循环）"""
+    # 构建所有待运行的模型配置
+    from llm_client import create_client, get_default_model
+    import json as _json
+
+    model_configs = [{
+        "label": "模型 A",
+        "api_key": req.api_key,
+        "provider": req.provider,
+        "model": req.model or get_default_model(req.provider),
+        "base_url": req.base_url,
+    }]
+    # 对比模型 B, C
+    if req.compare_keys:
         try:
-            # 创建 LLM 客户端（多厂商适配）
-            from llm_client import create_client, get_default_model
-            client = create_client(req.api_key, provider=req.provider, base_url=req.base_url)
-            model = req.model or get_default_model(req.provider)
+            extra_keys = _json.loads(req.compare_keys) if isinstance(req.compare_keys, str) else req.compare_keys
+            extra_models = _json.loads(req.compare_models) if isinstance(req.compare_models, str) and req.compare_models else []
+            extra_providers = _json.loads(req.compare_providers) if isinstance(req.compare_providers, str) and req.compare_providers else []
+        except Exception:
+            extra_keys, extra_models, extra_providers = [], [], []
+        labels = ["模型 B", "模型 C"]
+        for i, key in enumerate(extra_keys[:2]):
+            if key:
+                provider = extra_providers[i] if i < len(extra_providers) else "deepseek"
+                model = extra_models[i] if i < len(extra_models) else get_default_model(provider)
+                model_configs.append({
+                    "label": labels[i],
+                    "api_key": key,
+                    "provider": provider,
+                    "model": model,
+                    "base_url": None,
+                })
 
-            # 切分章节
-            from chapter_splitter import split_chapters, get_chapter_summary
-            chapters = split_chapters(req.text)
-            summary = get_chapter_summary(chapters)
+    total_models = len(model_configs)
+    all_results = [None] * total_models
 
-            # 构建章节标题→原文映射（供前端修改时精准定位章节）
-            ch_map = {}
-            for ch in chapters:
-                ch_map[ch["title"]] = ch["content"][:8000]
+    def run_single_model(idx: int, cfg: dict):
+        """在独立线程中运行单个模型的完整转换流程"""
+        label = cfg["label"]
+        try:
+            client = create_client(cfg["api_key"], provider=cfg["provider"], base_url=cfg.get("base_url"))
+            model = cfg["model"]
 
-            # 推送章节识别结果（携带章节原文映射）
-            _put_sync(queue, {
-                "type": "chapters",
-                "data": summary,
-                "count": len(chapters),
-                "chapter_map": ch_map
-            }, event_loop)
+            # 第一个模型负责章节切分和策略
+            if idx == 0:
+                from chapter_splitter import split_chapters, get_chapter_summary
+                chapters = split_chapters(req.text)
+                summary = get_chapter_summary(chapters)
+                ch_map = {}
+                for ch in chapters:
+                    ch_map[ch["title"]] = ch["content"][:8000]
 
-            # ===== 改编策略报告 =====
-            from adaptation_agent import generate_adaptation_strategy
-            strategy_report = generate_adaptation_strategy(
-                req.text, summary, client, model=model
-            )
-            _put_sync(queue, {
-                "type": "strategy",
-                "report": strategy_report
-            }, event_loop)
+                _put_sync(queue, {
+                    "type": "chapters", "data": summary, "count": len(chapters),
+                    "chapter_map": ch_map
+                }, event_loop)
 
-            # 执行转换
+                from adaptation_agent import generate_adaptation_strategy
+                strategy_report = generate_adaptation_strategy(req.text, summary, client, model=model)
+                _put_sync(queue, {"type": "strategy", "report": strategy_report}, event_loop)
+            else:
+                chapters = None
+                ch_map = None
+                strategy_report = None
+
             from converter import convert_novel_to_script
 
             def on_progress(current: int, total: int, title: str, status: str):
-                """进度回调：每章开始时推送"开始处理"，完成时推送"已完成" """
                 _put_sync(queue, {
-                    "type": "progress",
-                    "current": current,
-                    "total": total,
-                    "title": title,
-                    "status": status,
+                    "type": "progress", "label": label,
+                    "current": current, "total": total,
+                    "title": title, "status": status,
                     "percent": round(current / total * 100) if total > 0 else 0
                 }, event_loop)
 
             def on_partial(scenes: list, characters: list, completed: int, total: int):
-                """每完成 N 章推送一次中间结果（含角色档案）"""
                 _put_sync(queue, {
-                    "type": "partial",
-                    "scenes": scenes,
-                    "characters": characters,
-                    "completed": completed,
-                    "total": total
+                    "type": "partial", "label": label,
+                    "scenes": scenes, "characters": characters,
+                    "completed": completed, "total": total
                 }, event_loop)
 
             result = convert_novel_to_script(
@@ -236,63 +256,77 @@ async def convert(req: ConvertRequest):
                 model=model,
             )
 
-            # ===== 场景分析（时长/难度/不可拍/戏剧功能/矛盾点）=====
             from adaptation_agent import analyze_all_scenes, estimate_total_runtime, split_into_episodes, annotate_conflicts
             result["scenes"] = analyze_all_scenes(result.get("scenes", []))
             result["scenes"] = annotate_conflicts(result["scenes"])
             runtime = estimate_total_runtime(result["scenes"])
-            result["runtime"] = {
-                "min": runtime[0], "likely": runtime[1], "max": runtime[2]
-            }
+            result["runtime"] = {"min": runtime[0], "likely": runtime[1], "max": runtime[2]}
 
-            # ===== 分集拆分 =====
             if req.episode_minutes > 0:
-                episodes = split_into_episodes(
-                    result["scenes"],
-                    target_minutes=req.episode_minutes,
-                    chapter_map=ch_map,
-                )
-                result["episodes"] = episodes
-                result["episode_count"] = len(episodes)
+                result["episodes"] = split_into_episodes(result["scenes"], target_minutes=req.episode_minutes, chapter_map=ch_map or {})
+                result["episode_count"] = len(result["episodes"])
             else:
                 result["episodes"] = []
                 result["episode_count"] = 0
 
-            # ===== 多模型对比（必须在 done 之前，否则 SSE 已关闭）=====
-            if req.compare_keys:
-                _put_sync(queue, {
-                    "type": "progress",
-                    "current": len(chapters),
-                    "total": len(chapters),
-                    "title": "对比模型生成中...",
-                    "status": "start",
-                    "percent": 100
-                }, event_loop)
-                _run_comparison(req, result, queue, event_loop)
-
-            # 推送最终结果（含所有分析数据）—— 务必最后推送
-            scene_count = len(result.get("scenes", []))
-            char_count = result.get("character_count", 0)
-            _put_sync(queue, {
-                "type": "done",
-                "result": result,
-                "scene_count": scene_count,
-                "chapter_count": len(chapters),
-                "chapter_map": ch_map,
-                "character_count": char_count,
-                "strategy_report": strategy_report,
-                "runtime": result.get("runtime", {}),
-                "episode_count": result.get("episode_count", 0)
-            }, event_loop)
+            all_results[idx] = {"label": label, "result": result}
+            _put_sync(queue, {"type": "model_done", "label": label, "idx": idx}, event_loop)
 
         except Exception as e:
-            _put_sync(queue, {
-                "type": "error",
-                "message": str(e)
-            }, event_loop)
+            all_results[idx] = {"label": label, "error": str(e)}
+            _put_sync(queue, {"type": "model_done", "label": label, "idx": idx, "error": str(e)}, event_loop)
 
-    # 启动转换线程
-    Thread(target=run_conversion, daemon=True).start()
+    # 并行启动所有模型
+    threads = []
+    for i, cfg in enumerate(model_configs):
+        t = Thread(target=run_single_model, args=(i, cfg), daemon=True)
+        t.start()
+        threads.append(t)
+
+    # 后台等待所有模型完成，然后推送 done
+    def finalize():
+        for t in threads:
+            t.join()
+        # 裁判评分：转换 all_results 格式
+        judge_input = []
+        for r in all_results:
+            if r and "result" in r:
+                judge_input.append({"label": r["label"], "scenes": r["result"].get("scenes", [])})
+            elif r:
+                judge_input.append({"label": r["label"], "scenes": []})
+        if len(judge_input) >= 2:
+            scores = _judge_results(judge_input, req)
+        else:
+            scores = {}
+        # 找第一个成功的结果作为主结果
+        main = next((r for r in all_results if r and "result" in r), all_results[0])
+        main_result = main.get("result", {}) if main else {}
+        # 组装 compare 数据
+        compare_data = []
+        for r in all_results:
+            if not r: continue
+            scenes = r.get("result", {}).get("scenes", []) if "result" in r else []
+            compare_data.append({
+                "label": r["label"],
+                "scene_count": len(scenes),
+                "score": scores.get(r["label"], "N/A"),
+                "error": r.get("error", ""),
+                "preview": scenes[:3],
+                "all_scenes": scenes,
+            })
+        _put_sync(queue, {"type": "compare", "results": compare_data}, event_loop)
+        _put_sync(queue, {
+            "type": "done",
+            "result": main_result,
+            "scene_count": len(main_result.get("scenes", [])),
+            "character_count": main_result.get("character_count", 0),
+            "runtime": main_result.get("runtime", {}),
+            "episode_count": main_result.get("episode_count", 0),
+            "all_results": [{"label": r["label"], "scenes": r.get("result", {}).get("scenes", []) if "result" in r else [],
+                              "error": r.get("error", "")} for r in all_results if r]
+        }, event_loop)
+
+    Thread(target=finalize, daemon=True).start()
 
     # SSE 生成器
     async def generate():
