@@ -31,10 +31,12 @@ export default function App() {
   const [cmpKeyB, setCmpKeyB] = useState(""); const [cmpKeyC, setCmpKeyC] = useState("")
   const [cmpModelB, setCmpModelB] = useState(""); const [cmpModelC, setCmpModelC] = useState("")
   const [cmpProvB, setCmpProvB] = useState("openai"); const [cmpProvC, setCmpProvC] = useState("openai")
+  const [cmpUrlB, setCmpUrlB] = useState(""); const [cmpUrlC, setCmpUrlC] = useState("")
   const [editedChapterMap, setEditedChapterMap] = useState<Record<string,string>>({})
   const [revChapter, setRevChapter] = useState("")
   const [revFeedback, setRevFeedback] = useState("")
-  // 首次加载从 localStorage 恢复
+  const [vizLoading, setVizLoading] = useState(false)
+  const [vizResult, setVizResult] = useState("")
   const [restored, setRestored] = useState(false)
 
   useEffect(() => {
@@ -66,11 +68,11 @@ export default function App() {
       localStorage.setItem("novel_script_state", JSON.stringify(toSave))
     } catch {}
   }, [novelText, chapters, chapterMap, scriptResult, strategyReport, allResults])
-  // 场景加载后自动设置第一个章节为修改目标
+  // 场景加载后或切换到修改页时自动设置第一个章节
   useEffect(() => {
     const chs = [...new Set((scriptResult.scenes||[]).map(s=>s.chapter).filter(Boolean))]
-    if (chs.length && !revChapter) setRevChapter(chs[0])
-  }, [scriptResult.scenes])
+    if (chs.length && (!revChapter || !chs.includes(revChapter))) setRevChapter(chs[0])
+  }, [scriptResult.scenes, tab])
 
   const apiParams = (extra: any = {}) => ({ text: novelText, api_key: apiKey, provider, model: model || undefined, base_url: customUrl || undefined, ...extra })
   const showToast = (m: string) => setToast(m)
@@ -206,6 +208,7 @@ export default function App() {
       compare_keys: JSON.stringify([cmpKeyB, cmpKeyC].filter(Boolean)),
       compare_models: JSON.stringify([cmpModelB, cmpModelC].filter(Boolean)),
       compare_providers: JSON.stringify([cmpProvB, cmpProvC].filter(Boolean)),
+      compare_urls: JSON.stringify([cmpUrlB, cmpUrlC].filter(Boolean)),
     } as any, handleSSE, () => { setConverting(false); showToast("✅ 完成") }, (err) => { setConverting(false); showToast("❌ " + err) })
   }
 
@@ -246,6 +249,27 @@ export default function App() {
       }
     } catch (e: any) { showToast("❌ " + (e.message || "修改异常")) }
     finally { setRevising(false) }
+  }
+
+  const handleVisualize = async () => {
+    const allScenes = scriptResult.scenes || []
+    const chapterScenes = allScenes.filter(s => s.chapter === revChapter)
+    if (!chapterScenes.length) return showToast("请先选择有剧本数据的章节")
+    const chapterText = chapterMap[revChapter] || novelText
+    const yaml = yamlDump({ scenes: chapterScenes })
+    setVizLoading(true)
+    setVizResult("")
+    try {
+      const r = await fetch("/api/visualize", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ chapter_text: chapterText.slice(0,3000), existing_yaml: yaml, feedback: "", api_key: apiKey, provider, base_url: customUrl||null, model: model||null, chapter_title: revChapter })
+      })
+      const d = await r.json()
+      if (d.success) { setVizResult(d.text); showToast("🎬 视觉化改写完成，查看预览") }
+      else showToast("❌ " + (d.error||"失败"))
+    } catch (e: any) { showToast("❌ " + e.message) }
+    finally { setVizLoading(false) }
   }
 
   const viewModel = (idxOrLabel: any) => {
@@ -300,7 +324,7 @@ export default function App() {
             {(scriptResult.episodes?.length ?? 0) > 0 && <button onClick={downloadEpisodesWord} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">📺 分集 Word</button>}
           </div>
         )}
-        {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC }} />}
+        {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpUrlB, setCmpUrlB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC, cmpUrlC, setCmpUrlC }} />}
         {tab === "input" && <InputPanel {...{ novelText, setNovelText, handleFile, handlePreview }} />}
         {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText, novelText, editedChapterMap, setEditedChapterMap, apiKey, provider, model, customUrl, setRevChapter }} />}
         {tab === "strategy" && <StrategyView report={strategyReport} />}
@@ -308,7 +332,7 @@ export default function App() {
         {tab === "characters" && <CharactersView characters={scriptResult.characters||[]} />}
         {tab === "episodes" && <EpisodesView episodes={scriptResult.episodes||[]} epMinutes={epMinutes} />}
         {tab === "compare" && <CompareView results={compareResults} viewModel={viewModel} />}
-        {tab === "revise" && <RevisePanel {...{ scriptResult, chapterMap, revChapter, setRevChapter, revFeedback, setRevFeedback, handleRevise, revising }} />}
+        {tab === "revise" && <RevisePanel {...{ scriptResult, chapterMap, revChapter, setRevChapter, revFeedback, setRevFeedback, handleRevise, handleVisualize, revising, vizLoading, vizResult, setVizResult }} />}
         {tab === "yaml" && <YamlView result={scriptResult} runtime={scriptResult.runtime} sceneCount={scriptResult.scenes?.length || 0} charCount={scriptResult.characters?.length || 0} epCount={scriptResult.episodes?.length || 0} />}
       </main>
     </div>
