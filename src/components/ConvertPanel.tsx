@@ -6,6 +6,7 @@ export default function ConvertPanel(p: any) {
   const [editText, setEditText] = useState("")
   const [aiResult, setAiResult] = useState("")
   const [aiLoading, setAiLoading] = useState(false)
+  const [selRange, setSelRange] = useState<{start:number,end:number} | null>(null)
   const colors = ["bg-black","bg-gray-500","bg-gray-300"]
 
   const openEdit = (ch: Chapter) => {
@@ -15,12 +16,19 @@ export default function ConvertPanel(p: any) {
   }
 
   const handleAiEdit = async (mode: "rewrite" | "expand") => {
-    const sel = window.getSelection()?.toString()?.trim()
-    const text = sel || editText
+    const ta = document.getElementById("chapter-editor") as HTMLTextAreaElement
+    const selStart = ta?.selectionStart || 0
+    const selEnd = ta?.selectionEnd || 0
+    const selText = ta?.value?.substring(selStart, selEnd)?.trim()
+    const text = selText || editText
     if (!text) return
+    // 存储选中范围，以便后续替换
+    if (selText) setSelRange({ start: selStart, end: selEnd })
+    else setSelRange(null)
+
     const instruction = mode === "expand"
-      ? `请扩写以下内容，增加细节描写和人物心理活动，使内容更加丰满（保持原文风格）`
-      : `请改写以下内容，优化语言表达，使文字更加流畅生动（保持原意不变）`
+      ? `请扩写以下内容，增加细节描写和心理活动（保持原文风格）`
+      : `请改写以下内容，优化语言表达（保持原意不变）`
 
     setAiLoading(true)
     try {
@@ -38,17 +46,15 @@ export default function ConvertPanel(p: any) {
 
   const applyAiResult = () => {
     if (!aiResult) return
-    const sel = window.getSelection()
-    if (sel && sel.toString().trim()) {
-      const start = (document.getElementById("chapter-editor") as HTMLTextAreaElement)?.selectionStart || 0
-      const end = (document.getElementById("chapter-editor") as HTMLTextAreaElement)?.selectionEnd || 0
-      const before = editText.slice(0, start)
-      const after = editText.slice(end)
+    if (selRange) {
+      const before = editText.slice(0, selRange.start)
+      const after = editText.slice(selRange.end)
       setEditText(before + aiResult + after)
     } else {
       setEditText(aiResult)
     }
     setAiResult("")
+    setSelRange(null)
   }
 
   return (

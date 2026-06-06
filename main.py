@@ -48,6 +48,7 @@ class ReviseRequest(BaseModel):
     provider: str = "deepseek"
     base_url: Optional[str] = None
     model: Optional[str] = None
+    chapter_title: str = ""
 
 
 # ============================================================
@@ -424,6 +425,7 @@ async def revise(req: ReviseRequest):
             feedback=req.feedback,
             llm_client=client,
             model=model,
+            chapter_title=req.chapter_title,
         )
 
         scene_count = len(result.get("scenes", []))
