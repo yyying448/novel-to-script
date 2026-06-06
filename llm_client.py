@@ -23,7 +23,7 @@ PROVIDERS = {
     "deepseek": {
         "name": "DeepSeek",
         "base_url": "https://api.deepseek.com",
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-pro",
         "help": "platform.deepseek.com",
     },
     "openai": {
@@ -134,7 +134,7 @@ def call_llm(
         LLM 生成的文本内容
     """
     response = client.chat.completions.create(
-        model=model or "deepseek-chat",
+        model=model or "deepseek-v4-pro",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -164,7 +164,7 @@ def test_api_key(
     """
     try:
         client = create_client(api_key, provider, base_url)
-        model = get_default_model(provider) or "deepseek-chat"
+        model = get_default_model(provider) or "deepseek-v4-pro"
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": "回复OK"}],
@@ -180,7 +180,9 @@ def test_api_key(
         elif "403" in error_msg or "Forbidden" in error_msg:
             return False, "API Key 无权限（403）"
         elif "429" in error_msg:
-            return False, "请求频繁（429），请稍后"
+            return False, "请求频繁（429），请稍后重试"
+        elif "Arrearage" in error_msg or "overdue" in error_msg.lower():
+            return False, "账户欠费，请登录厂商平台充值"
         elif "timeout" in error_msg.lower() or "connect" in error_msg.lower():
             return False, "网络连接失败，请检查 API 地址或网络"
         else:

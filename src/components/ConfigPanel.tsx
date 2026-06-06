@@ -19,26 +19,29 @@ export default function ConfigPanel(p: any) {
         <button onClick={p.handleSaveKey}
           className="px-5 py-2 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800 transition-colors">验证</button>
       </div>
+      <p className="text-xs text-gray-400 mt-2">Key 获取地址：{p.providers.find((x:any)=>x.key===p.provider)?.help||""}</p>
       {p.provider==="custom"&&<input type="text" value={p.customUrl} onChange={(e:any)=>p.setCustomUrl(e.target.value)} placeholder="自定义 API 地址" className={inp+" mb-3"}/>}
-      <details className="mt-3"><summary className="text-sm text-gray-500 cursor-pointer hover:text-black">对比模式（可选）</summary>
-        <div className="flex gap-2 mt-3 flex-wrap">
+      <details className="mt-3"><summary className="text-sm text-gray-500 cursor-pointer hover:text-black">对比模式（可选，支持自定义）</summary>
+        <div className="flex gap-2 mt-3 flex-wrap items-center">
           <input type="text" value={p.cmpKeyB} onChange={(e:any)=>p.setCmpKeyB(e.target.value)} placeholder="模型 B Key" className={inp}/>
           <input type="text" value={p.cmpModelB} onChange={(e:any)=>p.setCmpModelB(e.target.value)} placeholder="模型 B 名" className={inp+" w-32"}/>
           <select value={p.cmpProvB} onChange={(e:any)=>p.setCmpProvB(e.target.value)} className={sel}>
-            {["openai","deepseek","zhipu","moonshot","qwen"].map(v=><option key={v} value={v}>{v}</option>)}
+            {p.providers.map((pr:any)=><option key={pr.key} value={pr.key}>{pr.name}</option>)}
           </select>
-          <button onClick={()=>api.validateKey(p.cmpKeyB,p.cmpProvB).then((r:any)=>p.showToast(r.success?"✅ OK":"❌ "+r.message))}
+          <button onClick={()=>api.validateKey(p.cmpKeyB,p.cmpProvB,p.cmpUrlB).then((r:any)=>p.showToast(r.success?"✅ OK":"❌ "+r.message))}
             className="px-3 py-2 text-sm border border-gray-300 text-gray-600 rounded-full hover:bg-gray-50">验证</button>
         </div>
-        <div className="flex gap-2 mt-3 flex-wrap">
+        {p.cmpProvB==="custom"&&<input type="text" value={p.cmpUrlB} onChange={(e:any)=>p.setCmpUrlB(e.target.value)} placeholder="模型 B 自定义地址" className={inp+" mt-2"}/>}
+        <div className="flex gap-2 mt-3 flex-wrap items-center">
           <input type="text" value={p.cmpKeyC} onChange={(e:any)=>p.setCmpKeyC(e.target.value)} placeholder="模型 C Key（可选）" className={inp}/>
           <input type="text" value={p.cmpModelC} onChange={(e:any)=>p.setCmpModelC(e.target.value)} placeholder="模型 C 名" className={inp+" w-32"}/>
           <select value={p.cmpProvC} onChange={(e:any)=>p.setCmpProvC(e.target.value)} className={sel}>
-            {["openai","deepseek","zhipu","moonshot","qwen"].map(v=><option key={v} value={v}>{v}</option>)}
+            {p.providers.map((pr:any)=><option key={pr.key} value={pr.key}>{pr.name}</option>)}
           </select>
-          <button onClick={()=>api.validateKey(p.cmpKeyC,p.cmpProvC).then((r:any)=>p.showToast(r.success?"✅ OK":"❌ "+r.message))}
+          <button onClick={()=>api.validateKey(p.cmpKeyC,p.cmpProvC,p.cmpUrlC).then((r:any)=>p.showToast(r.success?"✅ OK":"❌ "+r.message))}
             className="px-3 py-2 text-sm border border-gray-300 text-gray-600 rounded-full hover:bg-gray-50">验证</button>
         </div>
+        {p.cmpProvC==="custom"&&<input type="text" value={p.cmpUrlC} onChange={(e:any)=>p.setCmpUrlC(e.target.value)} placeholder="模型 C 自定义地址" className={inp+" mt-2"}/>}
       </details>
     </div>
   )
