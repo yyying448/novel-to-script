@@ -13,7 +13,7 @@ export default function ConvertPanel(p: any) {
 
   const openEdit = (ch: Chapter) => {
     setEditing(ch.title)
-    setEditText(p.chapterMap?.[ch.title] || "")
+    setEditText(p.editedChapterMap?.[ch.title] || p.chapterMap?.[ch.title] || "")
     setAiResult("")
   }
 
