@@ -142,7 +142,7 @@ async def preview_chapters(req: ConvertRequest):
         summary = get_chapter_summary(chapters)
         ch_map = {}
         for ch in chapters:
-            ch_map[ch["title"]] = ch["content"][:8000]
+            ch_map[ch["title"]] = ch["content"]
 
         return JSONResponse({
             "success": True,
@@ -221,7 +221,7 @@ async def convert(req: ConvertRequest):
                 summary = get_chapter_summary(chapters)
                 ch_map = {}
                 for ch in chapters:
-                    ch_map[ch["title"]] = ch["content"][:8000]
+                    ch_map[ch["title"]] = ch["content"]
 
                 _put_sync(queue, {
                     "type": "chapters", "data": summary, "count": len(chapters),

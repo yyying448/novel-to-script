@@ -38,6 +38,12 @@ export default function App() {
 
   const apiParams = (extra: any = {}) => ({ text: novelText, api_key: apiKey, provider, model: model || undefined, base_url: customUrl || undefined, ...extra })
   const showToast = (m: string) => setToast(m)
+  const download = (content: string, filename: string, type = "text/plain") => {
+    const b = new Blob([content], { type })
+    const u = URL.createObjectURL(b)
+    const a = document.createElement("a"); a.href = u; a.download = filename; a.click()
+    URL.revokeObjectURL(u)
+  }
 
   const handleSaveKey = async () => {
     if (!apiKey) return showToast("请输入 API Key")
@@ -130,8 +136,14 @@ export default function App() {
       setActiveModelIdx(idxOrLabel)
       const r = allResults[idxOrLabel]
       if (r) setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any })
-    } else if (scenes) {
-      setScriptResult({ scenes })
+    } else if (typeof idxOrLabel === "string") {
+      // 按 label 从 allResults 查找完整数据
+      const r = allResults.find((x: any) => x && x.label === idxOrLabel)
+      if (r) {
+        setScriptResult({ scenes: r.scenes || [], characters: r.characters || [], episodes: r.episodes || [], runtime: r.runtime as any || {} })
+      } else if (scenes) {
+        setScriptResult({ scenes })
+      }
       showToast("📄 正在查看：" + idxOrLabel)
     }
   }
@@ -159,6 +171,16 @@ export default function App() {
       </aside>
       <main className="flex-1 overflow-y-auto p-8">
         {toast && <div className="fixed top-4 right-4 bg-gray-900 text-white px-5 py-2.5 rounded-full text-sm z-50 shadow-lg">{toast}</div>}
+        {(scriptResult.scenes?.length ?? 0) > 0 && (
+          <div className="flex items-center gap-2 mb-5 flex-wrap">
+            <span className="text-xs text-gray-400 mr-2">下载：</span>
+            <button onClick={() => download(yamlDump(scriptResult), "script.yaml")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">YAML</button>
+            <button onClick={() => download(JSON.stringify(scriptResult.scenes, null, 2), "scenes.json")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">JSON</button>
+            {strategyReport && <button onClick={() => download(strategyReport, "strategy.md")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">策略 .md</button>}
+            {(scriptResult.characters?.length ?? 0) > 0 && <button onClick={() => download(JSON.stringify(scriptResult.characters, null, 2), "characters.json")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">角色 JSON</button>}
+            {(scriptResult.episodes?.length ?? 0) > 0 && <button onClick={() => download(JSON.stringify(scriptResult.episodes, null, 2), "episodes.json")} className="px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-500 hover:bg-gray-100">分集 JSON</button>}
+          </div>
+        )}
         {tab === "config" && <ConfigPanel {...{ providers, apiKey, setApiKey, provider, setProvider, model, setModel, customUrl, setCustomUrl, handleSaveKey, showToast, cmpKeyB, setCmpKeyB, cmpModelB, setCmpModelB, cmpProvB, setCmpProvB, cmpKeyC, setCmpKeyC, cmpModelC, setCmpModelC, cmpProvC, setCmpProvC }} />}
         {tab === "input" && <InputPanel {...{ novelText, setNovelText, handleFile, handlePreview }} />}
         {tab === "convert" && <ConvertPanel {...{ chapters, lanes, converting, handleConvert, epMinutes, setEpMinutes, allResults, activeModelIdx, viewModel, chapterMap, setNovelText }} />}
