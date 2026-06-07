@@ -23,7 +23,7 @@ PROVIDERS = {
     "deepseek": {
         "name": "DeepSeek",
         "base_url": "https://api.deepseek.com",
-        "model": "deepseek-v4-pro",
+        "model": "deepseek-chat",
         "help": "platform.deepseek.com",
     },
     "openai": {
@@ -134,7 +134,7 @@ def call_llm(
         LLM 生成的文本内容
     """
     response = client.chat.completions.create(
-        model=model or "deepseek-v4-pro",
+        model=model or "deepseek-chat",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -164,7 +164,7 @@ def test_api_key(
     """
     try:
         client = create_client(api_key, provider, base_url)
-        model = get_default_model(provider) or "deepseek-v4-pro"
+        model = get_default_model(provider) or "deepseek-chat"
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": "回复OK"}],

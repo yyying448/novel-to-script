@@ -17,7 +17,7 @@ An intelligent novel-to-script adaptation tool powered by LLMs (DeepSeek / OpenA
 
 [▶️ Demo Video](demo-video.mp4) (coming soon)
 
-Live demo: see Quick Start below.
+Access: `http://localhost:5173`
 
 ##  Key Features
 
@@ -101,9 +101,7 @@ python main.py
 # 4. (Optional) Start React frontend — open a second terminal
 cd frontend && npm install && npx vite --host
 
-# 5. Open your browser
-# Backend only: http://127.0.0.1:8000
-# Full frontend: http://localhost:5173
+# 5. Open your browser at http://localhost:5173
 ```
 
 ### Usage Flow

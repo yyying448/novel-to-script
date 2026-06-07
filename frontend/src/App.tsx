@@ -151,7 +151,14 @@ export default function App() {
   const handleSSE = useCallback((e: SSEEvent) => {
     switch (e.type) {
       case "chapters": if (e.data?.length) { setChapters(e.data); if (e.chapter_map) setChapterMap(e.chapter_map) } break
-      case "strategy": if (e.report) { setStrategyReport(e.report); setTab("strategy") } break
+      case "strategy":
+        if (e.report) {
+          const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
+          setStrategyReport(e.report)  // 默认显示第一个收到的
+          setAllResults(p => { const n=[...p]; if (n[i]) n[i]={...n[i], strategy:e.report}; else n[i]={label:e.label||"模型 A",scenes:[],characters:[],episodes:[],runtime:{},character_count:0,episode_count:0,strategy:e.report}; return n })
+          if (i === 0 || activeModelIdxRef.current === i) setTab("strategy")
+        }
+        break
       case "progress": {
         const i = e.label === "模型 B" ? 1 : e.label === "模型 C" ? 2 : 0
         setLanes(p => { const n = [...p]; if (!n[i]) n[i] = { label: e.label || "模型 A", current: 0, total: e.total || 1, status: "", percent: 0, done: false }; n[i] = { ...n[i], current: e.current || 0, total: e.total || 1, status: e.status || "", percent: e.percent || 0 }; return n })
@@ -167,7 +174,7 @@ export default function App() {
       }
       case "model_done":
         setLanes(p => { const n = [...p]; const i = e.idx || 0; n[i] = { ...n[i], done: true, error: e.error }; return n })
-        setAllResults(p => { const n = [...p]; n[e.idx || 0] = { label: e.label || "", scenes: e.scenes || [], characters: e.characters || [], episodes: e.episodes || [], runtime: e.runtime || {}, character_count: e.character_count || 0, episode_count: e.episode_count || 0, error: e.error }; return n })
+        setAllResults(p => { const n = [...p]; n[e.idx || 0] = { label: e.label || "", scenes: e.scenes || [], characters: e.characters || [], episodes: e.episodes || [], runtime: e.runtime || {}, character_count: e.character_count || 0, episode_count: e.episode_count || 0, error: e.error, strategy: e.strategy || n[e.idx || 0]?.strategy || "" }; return n })
         break
       case "compare": if (e.results) setCompareResults(e.results); break
       case "done":
@@ -190,14 +197,18 @@ export default function App() {
       }
     }
     setConverting(true); setScriptResult({}); setStrategyReport(""); setCompareResults([])
-    // 根据对比模式预设模型列表
-    const hasB = !!(document.getElementById('compare-key-b') as HTMLInputElement)?.value?.trim()
-    const hasC = !!(document.getElementById('compare-key-c') as HTMLInputElement)?.value?.trim()
+    // 根据对比模式预设模型列表（用状态而非DOM，避免页面切换后元素被卸载）
+    const hasB = !!cmpKeyB?.trim()
+    const hasC = !!cmpKeyC?.trim()
     const initResults: any[] = [{ label: "模型 A", scenes: [], characters: [], episodes: [], runtime: {}, character_count: 0, episode_count: 0 }]
     if (hasB) initResults.push({ label: "模型 B", scenes: [], characters: [], episodes: [], runtime: {}, character_count: 0, episode_count: 0 })
     if (hasC) initResults.push({ label: "模型 C", scenes: [], characters: [], episodes: [], runtime: {}, character_count: 0, episode_count: 0 })
     setAllResults(initResults)
-    setLanes([{ label: "模型 A", current: 0, total: chapters.length || 1, status: "等待中...", percent: 0, done: false }])
+    const chTotal = (checkedChapters && checkedChapters.size > 0) ? checkedChapters.size : (chapters.length || 1)
+    const initLanes = [{ label: "模型 A", current: 0, total: chTotal, status: "等待中...", percent: 0, done: false }]
+    if (hasB) initLanes.push({ label: "模型 B", current: 0, total: chTotal, status: "等待中...", percent: 0, done: false })
+    if (hasC) initLanes.push({ label: "模型 C", current: 0, total: chTotal, status: "等待中...", percent: 0, done: false })
+    setLanes(initLanes)
     const selected = checkedChapters && checkedChapters.size > 0 ? [...checkedChapters] : []
     api.convertNovel({
       ...apiParams({ text }), episode_minutes: epMinutes,
@@ -228,15 +239,15 @@ export default function App() {
         const newScenes = r.result.scenes
         const merged = [...other, ...newScenes].sort((a: any, b: any) => (a.scene_id || 0) - (b.scene_id || 0))
         merged.forEach((s: any, i: number) => { s.scene_id = i + 1 })
-        // 重新计算角色
+        // 重新计算角色，保留现有分集不变
         const chars = recomputeCharacters(merged)
-        const newResult = { ...scriptResult, scenes: merged, characters: chars, character_count: chars.length, episodes: [], episode_count: 0 }
+        const newResult = { ...scriptResult, scenes: merged, characters: chars, character_count: chars.length }
         setScriptResult(newResult)
         // 同步更新 allResults
         setAllResults(prev => {
           const n = [...prev]
           const idx = activeModelIdxRef.current
-          if (n[idx]) n[idx] = { ...n[idx], scenes: merged, characters: chars, character_count: chars.length, episodes: [], episode_count: 0 }
+          if (n[idx]) n[idx] = { ...n[idx], scenes: merged, characters: chars, character_count: chars.length }
           return n
         })
         setTab("visual")
@@ -253,12 +264,12 @@ export default function App() {
     if (typeof idxOrLabel === "number") {
       setActiveModelIdx(idxOrLabel)
       const r = allResults[idxOrLabel]
-      if (r) setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any })
+      if (r) { setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any }); if (r.strategy) setStrategyReport(r.strategy) }
     } else if (typeof idxOrLabel === "string") {
       const r = allResults.find((x: any) => x && x.label === idxOrLabel)
       if (r) {
         setActiveModelIdx(allResults.indexOf(r))
-        setScriptResult({ scenes: r.scenes || [], characters: r.characters || [], episodes: r.episodes || [], runtime: r.runtime as any || {} })
+        setScriptResult({ scenes: r.scenes || [], characters: r.characters || [], episodes: r.episodes || [], runtime: r.runtime as any || {} }); if (r.strategy) setStrategyReport(r.strategy)
         setTab("visual")
         showToast("📄 已切换至 " + idxOrLabel)
       } else {

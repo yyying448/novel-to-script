@@ -17,7 +17,7 @@
 
 演示视频（待上传）
 
-在线访问：后端 `http://127.0.0.1:8000` ｜ 前端 `http://localhost:5173`
+在线访问：`http://localhost:5173`
 
 ## 核心功能
 
@@ -102,9 +102,7 @@ python main.py
 # 4. (可选) 启动 React 前端 —— 打开第二个终端
 cd frontend && npm install && npx vite --host
 
-# 5. 打开浏览器
-# 仅后端：http://127.0.0.1:8000
-# 完整前端：http://localhost:5173
+# 5. 打开浏览器访问 http://localhost:5173
 ```
 
 ### 使用流程
