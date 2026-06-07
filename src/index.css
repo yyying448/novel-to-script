@@ -1,9 +1,0 @@
-@import "tailwindcss";
-
-body {
-  background: #fafafa;
-  color: #1a1a1a;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-}
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-thumb { background: #ccc; border-radius: 2px; }
