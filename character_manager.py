@@ -52,6 +52,14 @@ class CharacterManager:
 
     def __init__(self):
         self.characters: Dict[str, CharacterProfile] = {}
+        self.aliases: Dict[str, str] = {}  # 别名→主名
+        import re as _re
+        self._bracket = _re.compile(r'[（(][^)）]*[)）]')
+
+    def _norm(self, name: str) -> str:
+        """标准化角色名：去括号后缀，查别名词表"""
+        name = self._bracket.sub('', name).strip()
+        return self.aliases.get(name, name)
 
     # ================================================================
     # 增量注册（逐章调用，零额外 LLM 开销）
@@ -78,7 +86,7 @@ class CharacterManager:
                 if not char or not char.get("name"):
                     continue
 
-                name = char["name"]
+                name = self._norm(char["name"])
                 role = char.get("role", "未知")
 
                 # 首次出现的角色：创建档案

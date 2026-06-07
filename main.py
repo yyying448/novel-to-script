@@ -235,7 +235,7 @@ async def convert(req: ConvertRequest):
             client = create_client(cfg["api_key"], provider=cfg["provider"], base_url=cfg.get("base_url"))
             model = cfg["model"]
 
-            # 第一个模型负责章节切分和策略
+            # 第一个模型负责章节切分
             if idx == 0:
                 from chapter_splitter import split_chapters, get_chapter_summary
                 chapters = split_chapters(req.text)
@@ -243,19 +243,21 @@ async def convert(req: ConvertRequest):
                 ch_map = {}
                 for ch in chapters:
                     ch_map[ch["title"]] = ch["content"]
-
                 _put_sync(queue, {
                     "type": "chapters", "data": summary, "count": len(chapters),
                     "chapter_map": ch_map
                 }, event_loop)
-
-                from adaptation_agent import generate_adaptation_strategy
-                strategy_report = generate_adaptation_strategy(req.text, summary, client, model=model)
-                _put_sync(queue, {"type": "strategy", "report": strategy_report}, event_loop)
             else:
                 chapters = []
                 ch_map = {}
-                strategy_report = None
+
+            # 每个模型独立生成改编策略
+            from adaptation_agent import generate_adaptation_strategy
+            ch_summary = [{"title": ch["title"], "char_count": len(ch["content"])} for ch in (chapters or [])]
+            if not ch_summary:
+                ch_summary = [{"title": "全文", "char_count": len(req.text)}]
+            strategy_report = generate_adaptation_strategy(req.text, ch_summary, client, model=model)
+            _put_sync(queue, {"type": "strategy", "report": strategy_report, "label": label}, event_loop)
 
             from converter import convert_novel_to_script
 
@@ -295,7 +297,7 @@ async def convert(req: ConvertRequest):
                 result["episodes"] = []
                 result["episode_count"] = 0
 
-            all_results[idx] = {"label": label, "result": result}
+            all_results[idx] = {"label": label, "result": result, "strategy": strategy_report}
             # 推送完整的单模型结果（含角色/分集/时长）
             _put_sync(queue, {
                 "type": "model_done",
@@ -307,6 +309,7 @@ async def convert(req: ConvertRequest):
                 "episodes": result.get("episodes") or [],
                 "episode_count": result.get("episode_count") or 0,
                 "runtime": result.get("runtime") or {},
+                "strategy": strategy_report,
             }, event_loop)
 
         except Exception as e:
@@ -372,7 +375,8 @@ async def convert(req: ConvertRequest):
                 "runtime": (r.get("result", {}).get("runtime") or {}) if "result" in r else {},
                 "character_count": (r.get("result", {}).get("character_count") or 0) if "result" in r else 0,
                 "episode_count": (r.get("result", {}).get("episode_count") or 0) if "result" in r else 0,
-                "error": r.get("error") or ""
+                "error": r.get("error") or "",
+                "strategy": r.get("strategy", "")
             } for r in all_results if r]
         }, event_loop)
 
