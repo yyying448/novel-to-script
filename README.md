@@ -15,9 +15,9 @@
 
 ## Demo
 
-演示视频（待上传）
+演示视频(https://www.bilibili.com/video/BV11NEb6TEzs/?spm_id_from=333.1387.homepage.video_card.click&vd_source=19a42f7e109cd773d875c804cca66746)
 
-在线访问：`http://localhost:5173`
+
 
 ## 核心功能
 
