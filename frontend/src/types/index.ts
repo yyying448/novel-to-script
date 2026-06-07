@@ -51,6 +51,7 @@ export interface ModelResult {
   label: string; scenes: Scene[]; characters: Character[];
   episodes: Episode[]; runtime: Record<string, number>;
   character_count: number; episode_count: number; error?: string;
+  strategy?: string;
 }
 
 export interface CompareResult {
@@ -73,7 +74,7 @@ export interface SSEEvent {
   strategy_report?: string; episode_count?: number;
   all_results?: ModelResult[];
   results?: CompareResult[];
-  error?: string; message?: string;
+  error?: string; message?: string; strategy?: string;
 }
 
 export interface ConvertParams {
