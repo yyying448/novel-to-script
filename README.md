@@ -8,8 +8,6 @@
 
 [▶️ 演示视频](demo-video.mp4)（待上传）
 
-在线体验：启动后访问 `http://127.0.0.1:8000`
-
 ## ✨ 核心功能
 
 | 功能 | 说明 |
@@ -86,7 +84,7 @@ cd frontend && npm install && npx vite --host
 
 # 5. 打开浏览器
 # 仅后端：http://127.0.0.1:8000
-# 完整前端：http://localhost:5173
+# 完整前端：http://localhost:5174
 ```
 
 ### 使用流程
