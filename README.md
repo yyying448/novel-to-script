@@ -1,27 +1,43 @@
 [English](README_EN.md) | 中文
 
-# 📜 AI 小说转剧本工具
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.9+-blue" alt="Python">
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/React-19-61dafb" alt="React">
+  <img src="https://img.shields.io/badge/TypeScript-5-blue" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Vite-8-646cff" alt="Vite">
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
+</p>
+
+# AI 小说转剧本工具
 
 基于大语言模型（DeepSeek / OpenAI / 智谱 GLM / Kimi / 通义千问 / 自定义）的智能小说改编剧本工具，支持多模型并行转换与对比评分。上传小说文件，自动识别章节结构，逐章生成结构化剧本 YAML，包含场景划分、口语化台词、表演指导（语气/动作）和编剧备注。
 
-## 🎬 Demo
+## Demo
 
-[▶️ 演示视频](demo-video.mp4)（待上传）
+演示视频（待上传）
 
-## ✨ 核心功能
+在线访问：后端 `http://127.0.0.1:8000` ｜ 前端 `http://localhost:5173`
+
+## 核心功能
 
 | 功能 | 说明 |
 |---|---|
-| 📁 多格式解析 | 支持上传 TXT / DOCX / PDF 小说文件 |
-| 📖 智能章节识别 | 正则匹配"第X章""Chapter X"等中英文标题格式 |
-| 🤖 AI 逐章转换 | 调用 LLM API，将叙事文本转为结构化剧本 |
-| ⚡ 并发加速 | ThreadPoolExecutor 同时处理 3 章，速度提升 3 倍 |
-| 📡 SSE 实时推送 | Server-Sent Events 流式推送转换进度 |
-| ✏️ 二次修改 | 根据用户意见重新生成剧本 |
-| ✅ Schema 校验 | 自动校验输出的 YAML 结构完整性 |
-| 🔑 Key 验证 | 保存 API Key 时即时验证有效性 |
+| 多格式解析 | 支持上传 TXT / DOCX / PDF 小说文件，自动提取文本 |
+| 智能章节识别 | 正则匹配"第X章""Chapter X"等中英文标题格式 |
+| AI 逐章转换 | 多模型调用 LLM API，将叙事文本转为结构化剧本 |
+| 并行加速 | 三模型同时转换，速度提升约 3 倍 |
+| SSE 实时推送 | Server-Sent Events 流式推送转换进度 |
+| 对比评分 | 三模型并行生成 + 裁判 LLM 四维评分 |
+| 二次修改 | 根据用户意见精准修改指定章节剧本 |
+| 角色一致性 | 跨章节角色自动建档、别名合并、深层性格分析 |
+| 改编策略 | AI 生成改编分析报告（情节线、重点场景、注意事项） |
+| 智能分集 | 用户设定单集时长，自动按章节边界拆分剧集 |
+| 矛盾标注 | 6 类冲突自动检测 + 强度评级 |
+| 多厂商支持 | DeepSeek / OpenAI / GLM / Kimi / 千问 / 自定义接口 |
+| 本地存储 | 自动保存进度，二次打开可继续编辑 |
 
-## 🏗 剧本输出格式
+## 剧本输出格式
 
 ```yaml
 scenes:
@@ -40,7 +56,7 @@ scenes:
     scene_notes: "开场冲突场景，建立主角沉着性格"
 ```
 
-## 📂 项目结构
+## 项目结构
 
 ```
 novel-to-script/
@@ -54,11 +70,15 @@ novel-to-script/
 ├── schema.py               # 剧本 YAML Schema 定义与校验
 ├── file_parser.py          # 文件解析（txt/docx/pdf）
 ├── requirements.txt        # Python 依赖清单
+├── README.md               # 项目说明文档（中文）
+├── README_EN.md            # English documentation
 ├── SCHEMA.md               # YAML Schema 设计文档
+├── templates/              # Jinja2 模板目录
+├── static/                 # 静态文件目录
 └── frontend/               # React + Vite + TypeScript 前端
 ```
 
-## 🚀 快速开始
+## 快速开始
 
 ### 环境要求
 - Python 3.9+
@@ -84,7 +104,7 @@ cd frontend && npm install && npx vite --host
 
 # 5. 打开浏览器
 # 仅后端：http://127.0.0.1:8000
-# 完整前端：http://localhost:5174
+# 完整前端：http://localhost:5173
 ```
 
 ### 使用流程
@@ -95,7 +115,7 @@ cd frontend && npm install && npx vite --host
 4. **开始转换** — 点击按钮，实时查看进度
 5. **查看/修改** — YAML 源码 / 可视化剧本 / 输入意见二次生成
 
-## 🔧 技术架构
+## 技术架构
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
@@ -110,12 +130,12 @@ cd frontend && npm install && npx vite --host
 ```
 
 - **后端**：FastAPI + Uvicorn
-- **前端**：原生 HTML/CSS/JS（无框架依赖）
-- **AI 引擎**：多模型支持（DeepSeek / OpenAI / GLM / Kimi / 千问），兼容 OpenAI SDK
+- **前端**：React 19 + Vite 8 + TypeScript + Tailwind CSS
+- **AI 引擎**：DeepSeek V4 Pro / OpenAI GPT-4o / GLM / Kimi / 千问，兼容 OpenAI SDK
 - **并发策略**：ThreadPoolExecutor（max_workers=3），SSE 流式推送进度
 - **超时保护**：LLM 调用 120 秒超时，防止挂死
 
-## 📦 第三方依赖与原创功能说明
+## 第三方依赖与原创功能说明
 
 ### 第三方库
 
@@ -144,6 +164,6 @@ cd frontend && npm install && npx vite --host
 | `llm_client.py` | 多模型适配层 | 厂商注册表+客户端工厂，支持 5 个厂商+自定义接口 |
 | `frontend/` | React 前端 | Vite + TypeScript + Tailwind 组件化 SPA，侧边栏导航 |
 
-## 📄 许可证
+## 许可证
 
 MIT License
