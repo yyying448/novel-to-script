@@ -16,16 +16,13 @@ from character_manager import CharacterManager
 
 MAX_CONCURRENT_CHAPTERS = 3
 PARTIAL_RESULT_INTERVAL = 3
-_user_requirement = ""
 
 
 def _convert_single_chapter(
     chapter: Dict[str, str], llm_client, character_profiles: str = "",
-    model: str = "deepseek-chat"
+    model: str = "deepseek-chat", requirement: str = ""
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
-    转换单个章节，返回 (章节标题, 场景列表)
-    接受 character_profiles 注入角色一致性约束
     转换单个章节，返回 (章节标题, 场景列表)
     每个场景自动标注所属章节
     """
@@ -36,7 +33,7 @@ def _convert_single_chapter(
     chapter_scenes = []
 
     for chunk in sub_chunks:
-        extra = "\n=== 用户转换要求 ===\n" + _user_requirement if _user_requirement else ""
+        extra = "\n=== 用户转换要求 ===\n" + requirement if requirement else ""
         prompt = CONVERT_CHAPTER_PROMPT.format(
             character_profiles=character_profiles,
             chapter_text=chunk["content"]
@@ -63,8 +60,6 @@ def convert_novel_to_script(
     model: str = "deepseek-chat",
     requirement: str = "",
 ) -> Dict[str, Any]:
-    global _user_requirement
-    _user_requirement = requirement
     chapters = split_chapters(novel_text)
     if not chapters:
         return {"scenes": [], "chapter_map": {}, "error": "未能从文本中识别到任何章节"}
@@ -97,7 +92,7 @@ def convert_novel_to_script(
             char_inject = char_manager.get_consistency_prompt(chapter["title"])
 
             future = executor.submit(
-                _convert_single_chapter, chapter, llm_client, char_inject, model
+                _convert_single_chapter, chapter, llm_client, char_inject, model, requirement
             )
             future_to_idx[future] = idx
 

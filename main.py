@@ -10,17 +10,9 @@ from typing import Optional
 
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 app = FastAPI(title="AI小说转剧本工具")
-
-# 挂载静态文件目录
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Jinja2 模板
-templates = Jinja2Templates(directory="templates")
 
 
 # ============================================================
@@ -54,17 +46,7 @@ class ReviseRequest(BaseModel):
 
 
 # ============================================================
-# 页面路由
-# ============================================================
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    """首页"""
-    return templates.TemplateResponse("index.html", {"request": request})
-
-
-# ============================================================
-# API：获取可用 LLM 厂商列表
+# API 路由
 # ============================================================
 @app.get("/api/providers")
 async def get_providers():
@@ -546,7 +528,7 @@ def _judge_results(results: list, req: ConvertRequest) -> dict:
     try:
         client = create_client(req.api_key, provider=req.provider, base_url=req.base_url)
         response = call_llm(client, "你是专业剧本评审。只输出 JSON，不要解释。", msg,
-                           model=req.model or "deepseek-v4-pro", max_tokens=1024)
+                           model=req.model or "deepseek-chat", max_tokens=1024)
         import json as _json
         # 提取 JSON：尝试多种方式
         text = response.strip()
