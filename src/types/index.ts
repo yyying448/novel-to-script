@@ -74,7 +74,7 @@ export interface SSEEvent {
   strategy_report?: string; episode_count?: number;
   all_results?: ModelResult[];
   results?: CompareResult[];
-  error?: string; message?: string;
+  error?: string; message?: string; strategy?: string;
 }
 
 export interface ConvertParams {

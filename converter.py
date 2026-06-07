@@ -241,13 +241,16 @@ def _parse_llm_yaml(text: str) -> list:
     if matches:
         text = matches[0].strip()
 
-    # 定位 scenes:
+    # 定位 scenes: 或第一个 scene_id（DeepSeek 可能不输出 scenes: 包裹）
     if not text.startswith("scenes:"):
         scenes_pos = text.find("\nscenes:")
-        if scenes_pos == -1:
-            scenes_pos = text.find("scenes:")
+        if scenes_pos == -1: scenes_pos = text.find("scenes:")
+        if scenes_pos == -1: scenes_pos = text.find("\n- scene_id:")
+        if scenes_pos == -1: scenes_pos = text.find("- scene_id:")
         if scenes_pos > 0:
             text = text[scenes_pos:]
+            if text.startswith("- scene_id:"):
+                text = "scenes:\n  " + text
 
     try:
         result = yaml.safe_load(text)
