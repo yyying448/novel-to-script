@@ -1,16 +1,25 @@
 [中文](README.md) | English
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.9+-blue" alt="Python">
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/React-19-61dafb" alt="React">
+  <img src="https://img.shields.io/badge/TypeScript-5-blue" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Vite-8-646cff" alt="Vite">
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
+</p>
+
 # 📜 AI Novel-to-Script Converter
 
 An intelligent novel-to-script adaptation tool powered by LLMs (DeepSeek / OpenAI / GLM / Kimi / Tongyi Qianwen / Custom). Supports multi-model parallel conversion and comparative scoring. Upload a novel file, automatically detect chapter structure, and generate structured YAML scripts chapter by chapter — complete with scene breakdowns, natural-sounding dialogue, performance direction (tone/action), and screenwriter notes.
 
-## 🎬 Demo
+##  Demo
 
 [▶️ Demo Video](demo-video.mp4) (coming soon)
 
 Live demo: see Quick Start below.
 
-## ✨ Key Features
+##  Key Features
 
 | Feature | Description |
 |---|---|
@@ -28,7 +37,7 @@ Live demo: see Quick Start below.
 | 📺 Episode Splitting | Auto-split scenes into episodes by target duration |
 | ⚡ Conflict Detection | Automatic conflict type and intensity tagging |
 
-## 🏗 Script Output Format
+##  Script Output Format
 
 ```yaml
 scenes:
@@ -48,7 +57,7 @@ scenes:
     scene_notes: "Opening conflict scene, establishes protagonist's calm demeanor"
 ```
 
-## 📂 Project Structure
+##  Project Structure
 
 ```
 novel-to-script/
@@ -68,7 +77,7 @@ novel-to-script/
 └── frontend/               # React + Vite + TypeScript frontend
 ```
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 - Python 3.9+
@@ -105,7 +114,7 @@ cd frontend && npm install && npx vite --host
 4. **Start Conversion** — Click convert, watch real-time progress
 5. **View / Revise** — YAML source / visual script / submit feedback for revision
 
-## 🔧 Technical Architecture
+##  Technical Architecture
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
@@ -125,7 +134,7 @@ cd frontend && npm install && npx vite --host
 - **Concurrency**: ThreadPoolExecutor (max_workers=3), SSE streaming progress
 - **Timeout Protection**: 120-second LLM call timeout
 
-## 📦 Third-party Dependencies & Original Features
+##  Third-party Dependencies & Original Features
 
 ### Third-party Libraries
 
@@ -154,6 +163,6 @@ cd frontend && npm install && npx vite --host
 | `llm_client.py` | Multi-provider adapter | Provider registry + client factory, supports 5 providers + custom endpoints |
 | `frontend/` | React SPA | Vite + TypeScript + Tailwind component-based SPA with sidebar navigation |
 
-## 📄 License
+##  License
 
 MIT License
