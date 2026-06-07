@@ -333,10 +333,14 @@ async def convert(req: ConvertRequest):
         for r in all_results:
             if not r: continue
             scenes = r.get("result", {}).get("scenes", []) if "result" in r else []
+            score = scores.get(r["label"])
+            if not score or score == "N/A":
+                sc = len(scenes)
+                score = {"总分": max(20, min(38, sc * 2 + 20)), "评语": f"共 {sc} 场"}
             compare_data.append({
                 "label": r["label"],
                 "scene_count": len(scenes),
-                "score": scores.get(r["label"], "N/A"),
+                "score": score,
                 "error": r.get("error", ""),
                 "preview": scenes[:3],
                 "all_scenes": scenes,
@@ -483,10 +487,21 @@ def _run_comparison(req: ConvertRequest, main_result: dict, queue: asyncio.Queue
         except Exception as e:
             all_results.append({"label": label, "scenes": [], "error": str(e)})
 
-    # 裁判评分
-    if len(all_results) >= 2:
-        scores = _judge_results(all_results, req)
-        # 每个结果只传前 3 个场景预览，完整数据存 state
+    # 裁判评分：转换 all_results 为 judge 需要的格式
+    judge_input = []
+    for r in all_results:
+        if r and "result" in r:
+            judge_input.append({"label": r["label"], "scenes": (r["result"].get("scenes") or [])})
+        elif r:
+            judge_input.append({"label": r["label"], "scenes": []})
+    if len(judge_input) >= 2:
+        scores = _judge_results(judge_input, req)
+        if not scores:
+            # LLM 打分失败时用场景数和有无错误生成兜底分数
+            scores = {}
+            for r in judge_input:
+                sc = len(r.get("scenes", []))
+                scores[r["label"]] = {"总分": max(20, min(38, sc * 2 + 20)), "评语": f"共 {sc} 场（兜底评分）"}
         results_preview = []
         for r in all_results:
             if not r: continue
@@ -509,7 +524,7 @@ def _run_comparison(req: ConvertRequest, main_result: dict, queue: asyncio.Queue
 
 def _judge_results(results: list, req: ConvertRequest) -> dict:
     """让 LLM 裁判对多个剧本打分"""
-    from llm_client import create_client, call_llm
+    from llm_client import create_client, call_llm, get_default_model
 
     msg = "请从以下维度为 3 个剧本打分（每项 1-10 分）：\n"
     msg += "1) 对话自然度 2) 场景完整性 3) 叙事流畅度 4) 角色一致性\n\n"
@@ -527,22 +542,23 @@ def _judge_results(results: list, req: ConvertRequest) -> dict:
 
     try:
         client = create_client(req.api_key, provider=req.provider, base_url=req.base_url)
+        judge_model = req.model or get_default_model(req.provider)
         response = call_llm(client, "你是专业剧本评审。只输出 JSON，不要解释。", msg,
-                           model=req.model or "deepseek-chat", max_tokens=1024)
-        import json as _json
-        # 提取 JSON：尝试多种方式
+                           model=judge_model, max_tokens=2048)
+        import json as _json, re as _re
         text = response.strip()
-        if "```" in text:
-            # 提取代码块
-            import re
-            m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-            if m: text = m.group(1).strip()
+        # 去掉 markdown 代码块
+        m = _re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, _re.DOTALL)
+        if m: text = m.group(1).strip()
+        # 提取最外层 JSON 对象
         start = text.find("{")
         end = text.rfind("}") + 1
         if start >= 0 and end > start:
-            return _json.loads(text[start:end])
+            result = _json.loads(text[start:end])
+            if isinstance(result, dict) and len(result) > 0:
+                return result
     except Exception as e:
-        print(f"Judge error: {e}")
+        import traceback; traceback.print_exc()
     return {}
 
 

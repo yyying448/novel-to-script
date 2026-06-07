@@ -178,8 +178,14 @@ export default function App() {
         break
       case "compare": if (e.results) setCompareResults(e.results); break
       case "done":
-        if (e.result) setScriptResult(e.result)
-        if (e.all_results) setAllResults(e.all_results)
+        if (e.all_results) {
+          setAllResults(e.all_results)
+          // 仅在首次加载结果时设置主模型视图
+          const first = e.all_results[0]
+          if (first && first.scenes?.length) {
+            setScriptResult({ scenes: [...first.scenes], characters: first.characters||[], episodes: first.episodes||[], runtime: (first.runtime as any)||{} })
+          }
+        }
         if (e.strategy_report) setStrategyReport(e.strategy_report)
         setConverting(false)
         break
@@ -264,12 +270,12 @@ export default function App() {
     if (typeof idxOrLabel === "number") {
       setActiveModelIdx(idxOrLabel)
       const r = allResults[idxOrLabel]
-      if (r) { setScriptResult({ scenes: r.scenes, characters: r.characters, episodes: r.episodes, runtime: r.runtime as any }); if (r.strategy) setStrategyReport(r.strategy) }
+      if (r) { setScriptResult({ scenes: [...(r.scenes||[])], characters: r.characters||[], episodes: r.episodes||[], runtime: r.runtime as any || {} }); if (r.strategy) setStrategyReport(r.strategy) }
     } else if (typeof idxOrLabel === "string") {
       const r = allResults.find((x: any) => x && x.label === idxOrLabel)
       if (r) {
         setActiveModelIdx(allResults.indexOf(r))
-        setScriptResult({ scenes: r.scenes || [], characters: r.characters || [], episodes: r.episodes || [], runtime: r.runtime as any || {} }); if (r.strategy) setStrategyReport(r.strategy)
+        setScriptResult({ scenes: [...(r.scenes||[])], characters: r.characters||[], episodes: r.episodes||[], runtime: r.runtime as any || {} }); if (r.strategy) setStrategyReport(r.strategy)
         setTab("visual")
         showToast("📄 已切换至 " + idxOrLabel)
       } else {
