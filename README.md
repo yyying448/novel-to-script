@@ -1,4 +1,4 @@
-[English](README_EN.md) | 中文
+<h1 align="center">🎬 AI 小说转剧本工具</h1>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.9+-blue" alt="Python">
@@ -9,13 +9,17 @@
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
 </p>
 
-# AI 小说转剧本工具
+[English](README_EN.md) | 中文
+
+## 简介
 
 基于大语言模型（DeepSeek / OpenAI / 智谱 GLM / Kimi / 通义千问 / 自定义）的智能小说改编剧本工具，支持多模型并行转换与对比评分。上传小说文件，自动识别章节结构，逐章生成结构化剧本 YAML，包含场景划分、口语化台词、表演指导（语气/动作）和编剧备注。
 
-## Demo
+## 🎥 视频演示 (Video Demo)
 
-演示视频（待上传）
+本项目的完整功能操作与架构讲解视频已发布至公开平台，欢迎点击下方链接前往观看：
+
+* 🔗 **Bilibili 官方演示视频**：[Novel-to-Script｜AI小说转剧本-七牛云72h限时赛](https://www.bilibili.com/video/BV11NEb6TEzs/?spm_id_from=333.1387.homepage.video_card.click&vd_source=19a42f7e109cd773d875c804cca66746)
 
 
 ## 核心功能
